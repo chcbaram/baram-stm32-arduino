@@ -224,11 +224,16 @@ tools.openocd_qspi.upload.pattern="{path}/{cmd}" {upload.verbose} -f interface/{
 # The bootloader enumerates as CDC + HID (VID 0xCAFE, PID 0xB010; 0xB011 when
 # the UF2 mass storage volume is also present) and accepts a packet protocol on
 # the HID interface. download.py speaks it.
-tools.baram_boot.path={runtime.platform.path}/tools/download
-tools.baram_boot.cmd=download.py
+# baramdl is a self-contained binary rather than a script: the Arduino IDE
+# bundles neither Python nor a JRE, and arduino-cli simply runs upload.pattern
+# as a subprocess.
+tools.baram_boot.path={runtime.platform.path}/tools/baramdl
+tools.baram_boot.cmd=linux/baramdl
+tools.baram_boot.cmd.macosx=macosx/baramdl
+tools.baram_boot.cmd.windows=win/baramdl.exe
 tools.baram_boot.upload.params.verbose=-v
 tools.baram_boot.upload.params.quiet=
-tools.baram_boot.upload.pattern=python3 "{path}/{cmd}" {upload.verbose} --write "{build.path}/{build.project_name}.bin"
+tools.baram_boot.upload.pattern="{path}/{cmd}" {upload.verbose} --port {serial.port} --write "{build.path}/{build.project_name}.bin"
 
 #
 # Bootloader burning

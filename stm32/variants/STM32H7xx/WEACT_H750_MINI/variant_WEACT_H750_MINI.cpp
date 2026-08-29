@@ -13,6 +13,8 @@
 
 /* Dedicated variant directory: no board-name guard needed. */
 #include "pins_arduino.h"
+#include "backup.h"
+#include "bootloader.h"
 
 /*
  * Digital PinName array.
@@ -284,3 +286,58 @@ WEAK void SystemClock_Config(void)
     Error_Handler();
   }
 }
+
+/*
+ * Handing the board back to the bootloader.
+ *
+ * The bootloader decides at startup whether to stay resident. One of the things
+ * it looks at is a request left by the application in an RTC backup register,
+ * which survives the reset because the backup domain is not reset by one. So
+ * "reboot into the bootloader" is: set the flag, then reset.
+ *
+ * The register and bit numbers come from the bootloader's hw_def.h and reset.h
+ * and have to match:
+ *
+ *   RTC_BKP_DR3   the boot mode request
+ *     bit 0       MODE_BIT_BOOT   stay in the bootloader
+ *     bit 1       MODE_BIT_MSC    also bring up the UF2 mass storage volume
+ *
+ * This is not the only way back in. Pressing reset twice within 300 ms does the
+ * same thing without any help from the application, which is what makes a
+ * sketch that crashes, or never brings up USB, still recoverable.
+ */
+#define BOOT_MODE_BKP_INDEX   LL_RTC_BKP_DR3
+#define BOOT_MODE_BIT_BOOT    (1UL << 0)
+#define BOOT_MODE_BIT_MSC     (1UL << 1)
+
+extern "C" void rebootToBootloader(bool massStorage)
+{
+  uint32_t mode = BOOT_MODE_BIT_BOOT;
+
+  if (massStorage) {
+    mode |= BOOT_MODE_BIT_MSC;
+  }
+
+  enableBackupDomain();
+  setBackupRegister(BOOT_MODE_BKP_INDEX, mode);
+
+  /* The write goes through the APB-AHB bridge; make sure it has landed before
+   * the core is reset out from under it. */
+  (void)getBackupRegister(BOOT_MODE_BKP_INDEX);
+
+  NVIC_SystemReset();
+}
+
+/*
+ * The 1200 bps touch, which is what arduino-cli performs before running the
+ * upload tool when upload.use_1200bps_touch is set. Overrides the weak no-op in
+ * usbd_cdc_if.c, and only exists when the sketch was built with USB CDC - with
+ * USB support set to None there is no CDC endpoint to touch, and the reset
+ * double-tap is the way in.
+ */
+#if defined(USBCON) && defined(USBD_USE_CDC)
+extern "C" void usb_1200bps_touch_hook(void)
+{
+  rebootToBootloader(false);
+}
+#endif

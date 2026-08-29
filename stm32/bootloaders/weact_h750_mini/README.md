@@ -1,18 +1,36 @@
 # weact_h750_mini bootloader image
 
-Built from the `weact-h750-mini` repository, `firmware/weact-h750-boot`.
+| | |
+|---|---|
+| version | `V260829R1` |
+| name | `WEACT-H750-BOOT` |
+| size | 99,272 bytes |
+| sha256 | `383f76f0c83b34548fda8ebe7e1852edb8f2e2ecdc5d4b7056f7e5e1b289263b` |
 
-## Do not burn this build
+Built from the `weact-h750-mini` repository, `firmware/weact-h750-boot`, and
+verified on hardware running a 480 MHz Arduino sketch from QSPI.
 
-This image predates two fixes and is kept only as a placeholder:
+The version string is not tracked separately: the bootloader carries its own
+`firm_ver_t` at `0x08000400`, so it can be read straight out of this file.
 
-- The QSPI kernel clock was sourced from PLL2. `SystemInit()` in the
-  application clears `PLL2ON` before `main()` runs, which stops the clock the
-  CPU is fetching instructions over. It has since moved to D1HCLK, which
-  follows SYSCLK and therefore survives.
-- `SIOOMode` sent the read opcode on every command while the flash was in
-  continuous read mode, so random access returned garbage. Sequential bursts
-  still read correctly, which is why block-compare checks passed and only
-  instruction fetch failed.
+```sh
+python3 -c "d=open('weact_h750_mini.bin','rb').read(); print(d[0x404:0x424].split(b'\0')[0].decode())"
+```
 
-A board flashed with this image cannot start an application from QSPI.
+## What it provides
+
+- Boots the application from external QSPI flash at `0x90001000`, classifying
+  the image as NONE / RAW / VER / TAG and promoting VER to a CRC-verified TAG
+  on the first boot.
+- Stays resident on an NRST double-tap (two resets within 300 ms), on request
+  from the application via RTC backup register DR3, or when no valid image is
+  found. This is the recovery path and works no matter what the application
+  does, so a sketch that never brings up USB cannot lock you out.
+- Accepts firmware over USB CDC and HID using a packet protocol, and over UF2
+  mass storage. `tools/baramdl` speaks the CDC side.
+- Leaves QUADSPI memory mapped with its kernel clock on D1HCLK, which is what
+  lets the application change SYSCLK without stopping its own instruction
+  fetch.
+
+Reflashing it does not touch the QSPI flash, so the application and its tag
+survive - the board boots straight back into whatever sketch was there.

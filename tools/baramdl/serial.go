@@ -14,12 +14,14 @@ import (
 // owns the CDC endpoint and command packets are echoed rather than answered.
 const cmdBaudRate = 921600
 
-// USB identity of the bootloader. 0xB011 is the same device with the UF2 mass
-// storage volume also present, which happens after a reset double-tap.
+// USB identity of the bootloader. 0x1209 is pid.codes, the vendor ID shared by
+// open source hardware projects. 0xB751 is the same device with the UF2 mass
+// storage volume also present, which happens after a reset double-tap; 0xB752
+// is the application, which this tool cannot talk to.
 const (
-	bootVID     = 0xCAFE
-	bootPIDCDC  = 0xB010
-	bootPIDMSC  = 0xB011
+	bootVID    = 0x1209
+	bootPIDCDC = 0xB750
+	bootPIDMSC = 0xB751
 )
 
 type serialTransport struct {

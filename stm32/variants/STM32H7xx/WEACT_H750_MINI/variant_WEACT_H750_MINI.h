@@ -285,6 +285,22 @@ extern "C" {
  * variant_WEACT_H750_MINI.cpp.
  */
 
+/*
+ * Reboot into the bootloader and stay there, so the next sketch can be
+ * uploaded. Pass true to also bring up the UF2 mass storage volume.
+ *
+ * Sketches that enable USB CDC get this for free: arduino-cli performs a
+ * 1200 bps touch before uploading and the variant answers it by calling this.
+ * Call it yourself from a button handler, a serial command, or anywhere else
+ * it is useful. Pressing reset twice within 300 ms always works too, and needs
+ * nothing from the sketch.
+ */
+/* Declared with C linkage but a C++ default argument, so it has to sit inside
+ * the extern "C" block and behind the C++ guard. */
+#ifdef __cplusplus
+void rebootToBootloader(bool massStorage = false);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

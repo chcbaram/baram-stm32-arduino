@@ -28,10 +28,27 @@ BARAM.build.flash_offset=0x0
 BARAM.upload.maximum_size=0
 BARAM.upload.maximum_data_size=0
 BARAM.openocd.target=stm32h7x
-BARAM.vid.0=0xCAFE
-BARAM.pid.0=0xB010
-BARAM.vid.1=0xCAFE
-BARAM.pid.1=0xB011
+# The board is recognised in either state. The bootloader and the sketch
+# enumerate with different product IDs so tools can tell them apart, and both
+# are listed here so the IDE keeps recognising the board across a reset.
+# 0x1209 is pid.codes, the vendor ID shared by open source hardware projects,
+# and these three product IDs were free in its registry when they were picked.
+#   0xB750  bootloader, CDC + HID
+#   0xB751  bootloader, CDC + HID + UF2 mass storage (after a reset double-tap)
+#   0xB752  the sketch
+BARAM.vid.0=0x1209
+BARAM.pid.0=0xB750
+BARAM.vid.1=0x1209
+BARAM.pid.1=0xB751
+BARAM.vid.2=0x1209
+BARAM.pid.2=0xB752
+
+# What the sketch itself enumerates as. platform.txt defaults build.vid/build.pid
+# to vid.0/pid.0, which would make the sketch impersonate the bootloader.
+BARAM.build.vid=0x1209
+BARAM.build.pid=0xB752
+BARAM.build.usb_manufacturer="BARAM"
+BARAM.build.usb_product="WEACT-H750-MINI"
 
 # WEACT-H750-MINI
 # STM32H750VBT6, custom bootloader in internal flash, application runs XiP from
@@ -75,8 +92,27 @@ HiGenis.build.flash_offset=0x0
 HiGenis.upload.maximum_size=0
 HiGenis.upload.maximum_data_size=0
 HiGenis.openocd.target=stm32h7x
-HiGenis.vid.0=0xCAFE
-HiGenis.pid.0=0xB010
+# The board is recognised in either state. The bootloader and the sketch
+# enumerate with different product IDs so tools can tell them apart, and both
+# are listed here so the IDE keeps recognising the board across a reset.
+# 0x1209 is pid.codes, the vendor ID shared by open source hardware projects,
+# and these three product IDs were free in its registry when they were picked.
+#   0xB750  bootloader, CDC + HID
+#   0xB751  bootloader, CDC + HID + UF2 mass storage (after a reset double-tap)
+#   0xB752  the sketch
+HiGenis.vid.0=0x1209
+HiGenis.pid.0=0xB750
+HiGenis.vid.1=0x1209
+HiGenis.pid.1=0xB751
+HiGenis.vid.2=0x1209
+HiGenis.pid.2=0xB752
+
+# What the sketch itself enumerates as. platform.txt defaults build.vid/build.pid
+# to vid.0/pid.0, which would make the sketch impersonate the bootloader.
+HiGenis.build.vid=0x1209
+HiGenis.build.pid=0xB752
+HiGenis.build.usb_manufacturer="BARAM"
+HiGenis.build.usb_product="HiGenis"
 
 HiGenis.menu.pnum.HIGENIS_DUMMY=HiGenis Dummy (placeholder)
 HiGenis.menu.pnum.HIGENIS_DUMMY.build.board=HIGENIS_DUMMY
@@ -96,6 +132,16 @@ HiGenis.menu.pnum.HIGENIS_DUMMY.debug.svd_file={runtime.tools.STM32_SVD.path}/sv
 
 # --- BARAM -----------------------------------------------------------------------
 
+# Drag-and-drop over the bootloader's UF2 mass storage volume.
+# Requires the bootloader's USB stack, which is not implemented yet.
+# The default: no debug probe, just the USB cable. arduino-cli performs the
+# 1200 bps touch first, which the sketch answers by rebooting into the
+# bootloader, then waits for the bootloader's port to appear.
+BARAM.menu.upload_method.usbMethod=Bootloader USB (CDC)
+BARAM.menu.upload_method.usbMethod.upload.tool=baram_boot
+BARAM.menu.upload_method.usbMethod.upload.use_1200bps_touch=true
+BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
+
 # Writes the application into the external QSPI flash over SWD using OpenOCD's
 # stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
 # peripheral registers directly and uploads a small SRAM stub for bulk writes.
@@ -103,24 +149,19 @@ BARAM.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
 BARAM.menu.upload_method.qspiMethod.upload.protocol=stlink
 BARAM.menu.upload_method.qspiMethod.upload.tool=openocd_qspi
 
-# Drag-and-drop over the bootloader's UF2 mass storage volume.
-# Requires the bootloader's USB stack, which is not implemented yet.
-BARAM.menu.upload_method.uf2Method=UF2 (bootloader MSC)
-BARAM.menu.upload_method.uf2Method.upload.tool=uf2_upload
-
 BARAM.menu.xserial.generic=Enabled (generic 'Serial')
 BARAM.menu.xserial.none=Enabled (no generic 'Serial')
 BARAM.menu.xserial.none.build.xSerial=-DHAL_UART_MODULE_ENABLED -DHWSERIAL_NONE
 BARAM.menu.xserial.disabled=Disabled (No Serial support)
 BARAM.menu.xserial.disabled.build.xSerial=
 
-BARAM.menu.usb.none=None
 BARAM.menu.usb.CDCgen=CDC (generic 'Serial' supersede U(S)ART)
 BARAM.menu.usb.CDCgen.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC
 BARAM.menu.usb.CDC=CDC (no generic 'Serial')
 BARAM.menu.usb.CDC.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC -DDISABLE_GENERIC_SERIALUSB
 BARAM.menu.usb.HID=HID (keyboard and mouse)
 BARAM.menu.usb.HID.build.enable_usb={build.usb_flags} -DUSBD_USE_HID_COMPOSITE
+BARAM.menu.usb.none=None (upload needs the reset double-tap)
 
 BARAM.menu.opt.osstd=Smallest (-Os default)
 BARAM.menu.opt.oslto=Smallest (-Os) with LTO
@@ -162,6 +203,16 @@ BARAM.menu.rtlib.full.build.flags.ldspecs=
 
 # --- HiGenis -----------------------------------------------------------------------
 
+# Drag-and-drop over the bootloader's UF2 mass storage volume.
+# Requires the bootloader's USB stack, which is not implemented yet.
+# The default: no debug probe, just the USB cable. arduino-cli performs the
+# 1200 bps touch first, which the sketch answers by rebooting into the
+# bootloader, then waits for the bootloader's port to appear.
+HiGenis.menu.upload_method.usbMethod=Bootloader USB (CDC)
+HiGenis.menu.upload_method.usbMethod.upload.tool=baram_boot
+HiGenis.menu.upload_method.usbMethod.upload.use_1200bps_touch=true
+HiGenis.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
+
 # Writes the application into the external QSPI flash over SWD using OpenOCD's
 # stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
 # peripheral registers directly and uploads a small SRAM stub for bulk writes.
@@ -169,24 +220,19 @@ HiGenis.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
 HiGenis.menu.upload_method.qspiMethod.upload.protocol=stlink
 HiGenis.menu.upload_method.qspiMethod.upload.tool=openocd_qspi
 
-# Drag-and-drop over the bootloader's UF2 mass storage volume.
-# Requires the bootloader's USB stack, which is not implemented yet.
-HiGenis.menu.upload_method.uf2Method=UF2 (bootloader MSC)
-HiGenis.menu.upload_method.uf2Method.upload.tool=uf2_upload
-
 HiGenis.menu.xserial.generic=Enabled (generic 'Serial')
 HiGenis.menu.xserial.none=Enabled (no generic 'Serial')
 HiGenis.menu.xserial.none.build.xSerial=-DHAL_UART_MODULE_ENABLED -DHWSERIAL_NONE
 HiGenis.menu.xserial.disabled=Disabled (No Serial support)
 HiGenis.menu.xserial.disabled.build.xSerial=
 
-HiGenis.menu.usb.none=None
 HiGenis.menu.usb.CDCgen=CDC (generic 'Serial' supersede U(S)ART)
 HiGenis.menu.usb.CDCgen.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC
 HiGenis.menu.usb.CDC=CDC (no generic 'Serial')
 HiGenis.menu.usb.CDC.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC -DDISABLE_GENERIC_SERIALUSB
 HiGenis.menu.usb.HID=HID (keyboard and mouse)
 HiGenis.menu.usb.HID.build.enable_usb={build.usb_flags} -DUSBD_USE_HID_COMPOSITE
+HiGenis.menu.usb.none=None (upload needs the reset double-tap)
 
 HiGenis.menu.opt.osstd=Smallest (-Os default)
 HiGenis.menu.opt.oslto=Smallest (-Os) with LTO

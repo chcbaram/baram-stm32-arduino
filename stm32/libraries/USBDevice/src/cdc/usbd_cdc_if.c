@@ -90,6 +90,15 @@ USBD_CDC_LineCodingTypeDef linecoding = {
 };
 
 /* Private functions ---------------------------------------------------------*/
+/*
+ * Called when the host performs a 1200 bps touch. A variant overrides this to
+ * enter its bootloader; the default does nothing.
+ */
+WEAK void usb_1200bps_touch_hook(void)
+{
+}
+
+
 
 /**
   * @brief  USBD_CDC_Init
@@ -195,6 +204,22 @@ static int8_t USBD_CDC_Control(uint8_t cmd, uint8_t *pbuf, uint16_t length)
         transmitStart = 0;
       }
       rtsState = (((USBD_SetupReqTypedef *)pbuf)->wValue & CLS_RTS);
+
+      /*
+       * The 1200 bps touch, which is how the Arduino tooling asks a board to
+       * hand itself over to its bootloader: open the port at 1200 baud, then
+       * close it. Closing drops DTR, and that pair - 1200 baud plus DTR going
+       * low - is the signal. It is what upload.use_1200bps_touch in boards.txt
+       * makes arduino-cli do before it runs the upload tool.
+       *
+       * Upstream implements only the Maple scheme (four DTR toggles followed by
+       * the string "1EAF", see dtr_togglingHook in bootloader.c), which the
+       * Arduino tooling never sends. The hook below is weak and does nothing by
+       * default, so boards that do not define it are unaffected.
+       */
+      if (!dtrState && linecoding.bitrate == 1200) {
+        usb_1200bps_touch_hook();
+      }
 #ifdef DTR_TOGGLING_SEQ
       dtr_toggling++; /* Count DTR toggling */
 #endif

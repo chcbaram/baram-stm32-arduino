@@ -65,16 +65,38 @@ Three consequences worth knowing about:
 
 ### Uploading
 
-| Method | Needs | Status |
+USB support defaults to CDC, so a sketch always enumerates and can always be
+replaced over the same cable it is powered by. Upload works the way it does on
+any other USB-only Arduino board: arduino-cli performs a 1200 bps touch, the
+sketch answers it by rebooting into the bootloader, and `tools/baramdl` writes
+the new image over the bootloader's CDC interface at about 290 KB/s.
+
+Sketches can trigger the same reboot themselves:
+
+```cpp
+rebootToBootloader();       // stay in the bootloader
+rebootToBootloader(true);   // and bring up the UF2 mass storage volume
+```
+
+If a sketch is built with USB support set to None, or crashes before USB comes
+up, **pressing reset twice within 300 ms** keeps the bootloader resident. That
+path is handled entirely by the bootloader, so it works no matter what the
+sketch does.
+
+| Method | Needs | |
 |---|---|---|
-| OpenOCD QSPI (SWD) | ST-LINK on PA13/PA14 | See `debugger/weact_h750_qspi.cfg` |
-| Bootloader USB | Nothing but a USB cable | Host tool in progress |
+| Bootloader USB (CDC) | a USB cable | default |
+| OpenOCD QSPI (SWD) | ST-LINK on PA13/PA14 | `debugger/weact_h750_qspi.cfg`, untested |
+
+USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
+
+| PID | |
+|---|---|
+| `0xB750` | bootloader, CDC + HID |
+| `0xB751` | bootloader, with the UF2 mass storage volume |
+| `0xB752` | the sketch |
 
 ### Burning the bootloader
-
-> **The bundled image is out of date.** It predates the change that moved the
-> QSPI kernel clock to D1HCLK, and a board flashed with it cannot start an
-> application from QSPI. Do not burn it until it has been replaced.
 
 The bootloader image ships in `stm32/bootloaders/`. Pick the method under
 *Tools > Programmer*, then *Tools > Burn Bootloader*:
@@ -90,7 +112,7 @@ The bootloader image ships in `stm32/bootloaders/`. Pick the method under
 ```
 LED          PE3    active HIGH
 Button K1    PC13
-Serial       PA9 TX / PA10 RX   (USART1, also the bootloader console)
+Serial       PA9 TX / PA10 RX   (LPUART1; the bootloader uses USART1 on the same pins)
 USB OTG_FS   PA11 DM / PA12 DP  (VBUS is not wired to the MCU)
 QSPI         PB2 CLK, PB6 NCS, PD11 IO0, PD12 IO1, PE2 IO2, PD13 IO3
 LCD (SPI4)   PE12 SCK, PE14 MOSI, PE13 DC, PE11 CS, PE10 BL (active LOW)
