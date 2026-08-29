@@ -120,7 +120,9 @@ public:
 
 private:
   bool  _mounted = false;
-  FATFS _fs = {};
+  // Line aligned for the same reason as uSdHandle in sd.c: the sector window
+  // at the end of this object is what DMA reads into.
+  alignas(32) FATFS _fs = {};
   char  _path[4] = {0};   // the volume FATFS_LinkDriver hands back
 };
 

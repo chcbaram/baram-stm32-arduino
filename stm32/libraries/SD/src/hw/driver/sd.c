@@ -76,7 +76,11 @@ static bool sdWaitDone(volatile bool *p_done, uint32_t timeout_ms)
   }
   return true;
 }
-static SD_HandleTypeDef uSdHandle;
+// Aligned so the handle never shares a cache line with whatever precedes it in
+// .bss. Nothing widens a cache range any more, but this handle sat directly
+// behind FatFs's sector window and a single line-rounded invalidate wiped its
+// Instance field. Cheap insurance against that ever coming back.
+static SD_HandleTypeDef uSdHandle __attribute__((aligned(32)));
 
 
 
