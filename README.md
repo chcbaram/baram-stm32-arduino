@@ -117,8 +117,7 @@ Two things about the upload plumbing are worth knowing if you add a board:
   self-updating line is not possible there: without a newline nothing is
   flushed, and with one the line is finished. `baramdl` checks whether stdout is
   a terminal - on one it redraws a bar in place, otherwise it draws a bar per
-  10% down the console. Either way it stays quiet for uploads that finish inside
-  400 ms, which is most of them; progress for something already over is noise.
+  10% down the console.
 
 USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
 
