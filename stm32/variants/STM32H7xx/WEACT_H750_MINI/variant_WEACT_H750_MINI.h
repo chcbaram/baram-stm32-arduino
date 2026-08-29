@@ -278,10 +278,10 @@ extern "C" {
 
 /*
  * SysClkHalfSpeed() / SysClkFullSpeed() from the upstream WeAct variant are
- * deliberately not provided. They reconfigure PLL1, which HAL_RCC_OscConfig()
- * refuses to do while PLL1 is the system clock source - and it is, because the
- * bootloader hands the application a running 400 MHz clock tree. SYSCLK is the
- * bootloader's responsibility on this board. See SystemClock_Config() in
+ * deliberately not provided. They change SYSCLK at runtime, and on this board
+ * QUADSPI is clocked from D1HCLK, so SYSCLK also sets the SCK the code is being
+ * fetched over. Halving it to 240 MHz would leave SCK at 60 MHz, which is in
+ * spec but is a path nothing has tested. See SystemClock_Config() in
  * variant_WEACT_H750_MINI.cpp.
  */
 

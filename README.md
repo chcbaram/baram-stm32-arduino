@@ -72,6 +72,10 @@ Three consequences worth knowing about:
 
 ### Burning the bootloader
 
+> **The bundled image is out of date.** It predates the change that moved the
+> QSPI kernel clock to D1HCLK, and a board flashed with it cannot start an
+> application from QSPI. Do not burn it until it has been replaced.
+
 The bootloader image ships in `stm32/bootloaders/`. Pick the method under
 *Tools > Programmer*, then *Tools > Burn Bootloader*:
 

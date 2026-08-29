@@ -166,83 +166,113 @@ volatile const firm_ver_t firm_ver = {
 /**
   * @brief  System Clock Configuration
   *
-  * This board does NOT configure the system clock. The application executes in
-  * place from the external QSPI flash, and the bootloader has already brought
-  * everything up before jumping here. Re-running a normal SystemClock_Config()
-  * would break execution in two separate ways:
+  * The application is entered from the bootloader without a reset, but it does
+  * not inherit the bootloader's clock tree. SystemInit() runs before main() and
+  * puts the RCC back to its reset state (system_stm32h7xx.c):
   *
-  *  1. PLL2 must never be touched. The QSPI kernel clock is PLL2R, and
-  *     HAL_RCCEx_PeriphCLKConfig() unconditionally calls RCCEx_PLL2_Config()
-  *     for any peripheral that selects a PLL2 source - which starts with
-  *     __HAL_RCC_PLL2_DISABLE(). That stops the clock feeding the very memory
-  *     the CPU is fetching instructions from. The bootloader deliberately puts
-  *     QSPI on PLL2 (not PLL1) so that SYSCLK can change without disturbing
-  *     XiP; the flip side is that PLL2 itself is off limits.
+  *     RCC->CR  |= RCC_CR_HSION;      // HSI on
+  *     RCC->CFGR = 0x00000000U;       // SYSCLK back to HSI
+  *     RCC->CR  &= 0xEAF6ED7FU;       // HSE, HSI48, PLL1, PLL2, PLL3 all off
   *
-  *  2. PLL1 cannot be changed anyway. HAL_RCC_OscConfig() skips the whole PLL
-  *     block when SYSCLK is already sourced from PLL1 (stm32h7xx_hal_rcc.c,
-  *     "Check if the PLL is used as system clock or not"), and it is - the
-  *     bootloader hands over running at 400 MHz. Settings written here would be
-  *     silently ignored, so SYSCLK is the bootloader's responsibility. If a
-  *     different SYSCLK is needed, change it in the bootloader; nothing here
-  *     needs to change.
+  * So HSE and every PLL have to be set up here, exactly as on a board that
+  * boots normally. Note the order in that sequence: SYSCLK moves to HSI before
+  * the PLLs are stopped, which is what keeps the CPU alive - and it is also why
+  * the guard in HAL_RCC_OscConfig() that skips PLL1 while it is the system
+  * clock source does not apply by the time this function runs.
   *
-  * State guaranteed by the bootloader at entry (bsp.c):
-  *   PWR_LDO_SUPPLY, VOS1, FLASH_LATENCY_2
-  *   HSE 25 MHz ON, LSE 32.768 kHz ON (backup write access enabled), HSI48 ON
-  *   PLL1 HSE M=5 N=160 P=2 Q=8 R=2  -> VCO 800, SYSCLK 400 MHz, Q 100 MHz
-  *   PLL2      M=5 N=80  P=2 Q=2 R=2 -> VCO 400, R 200 MHz = QSPI kernel
-  *   PLL3 unused - free for the application
-  *   AHB DIV2 (200 MHz), APB1/2/3/4 DIV2 (100 MHz)
-  *   QSPI memory mapped, prescaler 1 -> SCK 100 MHz
-  *   USB kernel HSI48, RTC LSE, D2SRAM1/2/3 clocked, I+D cache on, MPU active
+  * What is different on this board is that the code being executed lives in the
+  * external QSPI flash, so the QUADSPI kernel clock must never stop:
+  *
+  *  - The bootloader puts QUADSPI on D1HCLK, which follows SYSCLK. SystemInit()
+  *    drops it to HSI's 64 MHz but never stops it, and the reset value of
+  *    D1CCIPR.QSPISEL selects D1HCLK anyway, so it survives. RCC_PERIPHCLK_QSPI
+  *    is deliberately left out of the selection below - there is nothing to fix.
+  *    SCK is D1HCLK/2, so 120 MHz once PLL1 is up, within the W25Q64JV's
+  *    133 MHz rating.
+  *  - Sourcing QUADSPI from a PLL instead would stop the instruction stream at
+  *    the RCC->CR write above, before this function ever runs.
+  *
+  * RCC_PERIPHCLK_RTC is also left out, and must stay out:
+  * HAL_RCCEx_PeriphCLKConfig() forces a backup domain reset whenever RTCSEL
+  * differs from what is already set, which would wipe the RTC backup registers
+  * where the bootloader keeps its boot mode flag, reset count and fault count.
+  * The bootloader has already put the RTC on the LSE.
   *
   * @param  None
   * @retval None
   */
 WEAK void SystemClock_Config(void)
 {
+  RCC_OscInitTypeDef RCC_OscInitStruct = {};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {};
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {};
 
-  /* Pick up the clock tree the bootloader left us so that SystemCoreClock,
-   * and with it delay()/micros()/baud rate division, is correct. */
-  SystemCoreClockUpdate();
+  /* Supply configuration update enable */
+  HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
-  /* PLL3 is ours alone. Drive it from HSE (25 MHz) and give the peripherals
-   * that want a dedicated kernel clock something sane to use.
-   * M=5 -> 5 MHz ref, N=32 -> 160 MHz VCO, /2 -> 80 MHz on P, Q and R. */
-  PeriphClkInitStruct.PLL3.PLL3M = 5;
-  PeriphClkInitStruct.PLL3.PLL3N = 32;
+  /* Scale 0 is the boosted performance mode needed for 480 MHz, and is only
+   * available with the LDO regulator. The silicon on this board is revision V,
+   * which supports it. */
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
+  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+
+  /* HSE 25 MHz crystal -> PLL1 480 MHz.
+   * M=5 gives a 5 MHz reference (VCIRANGE_2 covers 4-8 MHz), N=96 a 480 MHz
+   * VCO (VCOWIDE covers 192-836 MHz), P=1 the system clock and Q=10 the
+   * 48 MHz that USB and SDMMC want. */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 5;
+  RCC_OscInitStruct.PLL.PLLN = 96;
+  RCC_OscInitStruct.PLL.PLLP = 1;
+  RCC_OscInitStruct.PLL.PLLQ = 10;
+  RCC_OscInitStruct.PLL.PLLR = 10;
+  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
+  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
+  RCC_OscInitStruct.PLL.PLLFRACN = 0;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* SYSCLK 480 MHz, HCLK 240 MHz, APB buses 120 MHz.
+   * HCLK is also what QUADSPI divides down for SCK: 240 / 2 = 120 MHz. */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2
+                                | RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
+  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV2;
+  RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* PLL3 drives the peripherals that want a dedicated kernel clock.
+   * M=15 gives a 1.667 MHz reference (VCIRANGE_0 covers 1-2 MHz), N=96 a
+   * 160 MHz VCO (VCOMEDIUM covers 150-420 MHz; VCOWIDE starts at 192 MHz and
+   * would not lock here), and /2 puts 80 MHz on P, Q and R.
+   * PLL2 is left alone - nothing below asks for it. */
+  PeriphClkInitStruct.PLL3.PLL3M = 15;
+  PeriphClkInitStruct.PLL3.PLL3N = 96;
   PeriphClkInitStruct.PLL3.PLL3P = 2;
   PeriphClkInitStruct.PLL3.PLL3Q = 2;
   PeriphClkInitStruct.PLL3.PLL3R = 2;
-  PeriphClkInitStruct.PLL3.PLL3RGE = RCC_PLL3VCIRANGE_2;   /* 4-8 MHz ref */
-  PeriphClkInitStruct.PLL3.PLL3VCOSEL = RCC_PLL3VCOWIDE;
+  PeriphClkInitStruct.PLL3.PLL3RGE = RCC_PLL3VCIRANGE_0;
+  PeriphClkInitStruct.PLL3.PLL3VCOSEL = RCC_PLL3VCOMEDIUM;
   PeriphClkInitStruct.PLL3.PLL3FRACN = 0;
 
-  /*
-   * Only sources that cannot disturb the bootloader's clock tree:
-   *   PLL3     - unused by the bootloader, ours to program
-   *   PLL1 Q   - HAL only enables the DIVQ output, it does not reconfigure PLL1
-   *   HSI48    - already running
-   * Deliberately absent:
-   *   RCC_PERIPHCLK_QSPI - the bootloader owns it, see above
-   *   anything *_PLL2    - would stop the clock we are executing from
-   *   RCC_PERIPHCLK_RTC  - HAL_RCCEx_PeriphCLKConfig() forces a backup domain
-   *                        reset when RTCSEL differs, which would wipe the RTC
-   *                        backup registers the bootloader keeps its boot mode
-   *                        flag, reset count and fault count in. It is already
-   *                        on LSE.
-   * U(S)ARTs keep their APB default (100 MHz), which is what the bootloader
-   * uses for its own console.
-   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USB | RCC_PERIPHCLK_SDMMC
                                              | RCC_PERIPHCLK_ADC | RCC_PERIPHCLK_I2C123
                                              | RCC_PERIPHCLK_I2C4 | RCC_PERIPHCLK_SPI123
                                              | RCC_PERIPHCLK_SPI45 | RCC_PERIPHCLK_SPI6;
 
-  PeriphClkInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
-  PeriphClkInitStruct.SdmmcClockSelection = RCC_SDMMCCLKSOURCE_PLL;   /* PLL1Q, 100 MHz */
+  PeriphClkInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_PLL;      /* PLL1Q, 48 MHz */
+  PeriphClkInitStruct.SdmmcClockSelection = RCC_SDMMCCLKSOURCE_PLL;  /* PLL1Q, 48 MHz */
   PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL3;
   PeriphClkInitStruct.I2c123ClockSelection = RCC_I2C123CLKSOURCE_PLL3;
   PeriphClkInitStruct.I2c4ClockSelection = RCC_I2C4CLKSOURCE_PLL3;

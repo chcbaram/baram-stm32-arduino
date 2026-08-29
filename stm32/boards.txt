@@ -15,7 +15,7 @@ menu.upload_method=Upload method
 ################################################################################
 # BARAM
 
-BARAM.name=BARAM
+BARAM.name=BARAM - WEACT-H750-MINI
 
 BARAM.build.core=arduino
 BARAM.build.board=BARAM
@@ -62,7 +62,7 @@ BARAM.menu.pnum.WEACT_H750_MINI.debug.svd_file={runtime.tools.STM32_SVD.path}/sv
 # the entry below is not a real board and points at the WEACT_H750_MINI variant.
 # Replace both the pnum entry and its variant when the first HiGenis board exists.
 
-HiGenis.name=HiGenis
+HiGenis.name=HiGenis - Dummy
 
 HiGenis.build.core=arduino
 HiGenis.build.board=HiGenis
