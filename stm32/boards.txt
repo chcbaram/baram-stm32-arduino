@@ -1,0 +1,227 @@
+# BARAM STM32 Boards
+# See: https://arduino.github.io/arduino-cli/latest/platform-specification/
+
+menu.pnum=Board part number
+
+menu.xserial=U(S)ART support
+menu.usb=USB support (if available)
+menu.xusb=USB speed (if available)
+
+menu.opt=Optimize
+menu.dbg=Debug symbols and core logs
+menu.rtlib=C Runtime Library
+menu.upload_method=Upload method
+
+################################################################################
+# BARAM
+
+BARAM.name=BARAM
+
+BARAM.build.core=arduino
+BARAM.build.board=BARAM
+BARAM.build.st_extra_flags=-DCORE_CM7 -D{build.product_line} {build.enable_usb} {build.xSerial}
+BARAM.build.fpu=-mfpu=fpv5-d16
+BARAM.build.float-abi=-mfloat-abi=hard
+BARAM.build.series=STM32H7xx
+BARAM.build.mcu=cortex-m7
+BARAM.build.flash_offset=0x0
+BARAM.upload.maximum_size=0
+BARAM.upload.maximum_data_size=0
+BARAM.openocd.target=stm32h7x
+BARAM.vid.0=0xCAFE
+BARAM.pid.0=0xB010
+BARAM.vid.1=0xCAFE
+BARAM.pid.1=0xB011
+
+# WEACT-H750-MINI
+# STM32H750VBT6, custom bootloader in internal flash, application runs XiP from
+# external QSPI flash (W25Q64 8MB @ 0x90000000).
+#   0x90000000 4K  TAG sector   (written by the bootloader, NOT part of the image)
+#   0x90001000 1K  app vectors  <- VTOR
+#   0x90001400 1K  app firm_ver_t
+#   0x90001800     app code
+# VECT_TAB_BASE_ADDRESS is used instead of build.flash_offset because the core does
+# SCB->VTOR = VECT_TAB_BASE_ADDRESS | VECT_TAB_OFFSET (an OR, not an addition).
+BARAM.menu.pnum.WEACT_H750_MINI=WEACT-H750-MINI
+BARAM.menu.pnum.WEACT_H750_MINI.build.board=WEACT_H750_MINI
+BARAM.menu.pnum.WEACT_H750_MINI.build.product_line=STM32H750xx
+BARAM.menu.pnum.WEACT_H750_MINI.build.variant=STM32H7xx/WEACT_H750_MINI
+BARAM.menu.pnum.WEACT_H750_MINI.build.variant_h=variant_WEACT_H750_MINI.h
+BARAM.menu.pnum.WEACT_H750_MINI.build.st_extra_flags=-DCORE_CM7 -D{build.product_line} -DVECT_TAB_BASE_ADDRESS=0x90001000 {build.enable_usb} {build.xSerial}
+BARAM.menu.pnum.WEACT_H750_MINI.upload.maximum_size=8382464
+BARAM.menu.pnum.WEACT_H750_MINI.upload.maximum_data_size=524288
+BARAM.menu.pnum.WEACT_H750_MINI.bootloader.tool=bootburn
+BARAM.menu.pnum.WEACT_H750_MINI.build.bootloader_name=weact_h750_mini
+BARAM.menu.pnum.WEACT_H750_MINI.build.qspi_cfg=weact_h750_qspi.cfg
+BARAM.menu.pnum.WEACT_H750_MINI.debug.svd_file={runtime.tools.STM32_SVD.path}/svd/STM32H7xx/STM32H750.svd
+
+################################################################################
+# HiGenis
+#
+# Placeholder group. It exists so the HiGenis heading shows up in the board menu;
+# the entry below is not a real board and points at the WEACT_H750_MINI variant.
+# Replace both the pnum entry and its variant when the first HiGenis board exists.
+
+HiGenis.name=HiGenis
+
+HiGenis.build.core=arduino
+HiGenis.build.board=HiGenis
+HiGenis.build.st_extra_flags=-DCORE_CM7 -D{build.product_line} {build.enable_usb} {build.xSerial}
+HiGenis.build.fpu=-mfpu=fpv5-d16
+HiGenis.build.float-abi=-mfloat-abi=hard
+HiGenis.build.series=STM32H7xx
+HiGenis.build.mcu=cortex-m7
+HiGenis.build.flash_offset=0x0
+HiGenis.upload.maximum_size=0
+HiGenis.upload.maximum_data_size=0
+HiGenis.openocd.target=stm32h7x
+HiGenis.vid.0=0xCAFE
+HiGenis.pid.0=0xB010
+
+HiGenis.menu.pnum.HIGENIS_DUMMY=HiGenis Dummy (placeholder)
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.board=HIGENIS_DUMMY
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.product_line=STM32H750xx
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.variant=STM32H7xx/WEACT_H750_MINI
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.variant_h=variant_WEACT_H750_MINI.h
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.st_extra_flags=-DCORE_CM7 -D{build.product_line} -DVECT_TAB_BASE_ADDRESS=0x90001000 {build.enable_usb} {build.xSerial}
+HiGenis.menu.pnum.HIGENIS_DUMMY.upload.maximum_size=8382464
+HiGenis.menu.pnum.HIGENIS_DUMMY.upload.maximum_data_size=524288
+HiGenis.menu.pnum.HIGENIS_DUMMY.bootloader.tool=bootburn
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.bootloader_name=weact_h750_mini
+HiGenis.menu.pnum.HIGENIS_DUMMY.build.qspi_cfg=weact_h750_qspi.cfg
+HiGenis.menu.pnum.HIGENIS_DUMMY.debug.svd_file={runtime.tools.STM32_SVD.path}/svd/STM32H7xx/STM32H750.svd
+
+################################################################################
+# Upload methods
+
+# --- BARAM -----------------------------------------------------------------------
+
+# Writes the application into the external QSPI flash over SWD using OpenOCD's
+# stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
+# peripheral registers directly and uploads a small SRAM stub for bulk writes.
+BARAM.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
+BARAM.menu.upload_method.qspiMethod.upload.protocol=stlink
+BARAM.menu.upload_method.qspiMethod.upload.tool=openocd_qspi
+
+# Drag-and-drop over the bootloader's UF2 mass storage volume.
+# Requires the bootloader's USB stack, which is not implemented yet.
+BARAM.menu.upload_method.uf2Method=UF2 (bootloader MSC)
+BARAM.menu.upload_method.uf2Method.upload.tool=uf2_upload
+
+BARAM.menu.xserial.generic=Enabled (generic 'Serial')
+BARAM.menu.xserial.none=Enabled (no generic 'Serial')
+BARAM.menu.xserial.none.build.xSerial=-DHAL_UART_MODULE_ENABLED -DHWSERIAL_NONE
+BARAM.menu.xserial.disabled=Disabled (No Serial support)
+BARAM.menu.xserial.disabled.build.xSerial=
+
+BARAM.menu.usb.none=None
+BARAM.menu.usb.CDCgen=CDC (generic 'Serial' supersede U(S)ART)
+BARAM.menu.usb.CDCgen.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC
+BARAM.menu.usb.CDC=CDC (no generic 'Serial')
+BARAM.menu.usb.CDC.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC -DDISABLE_GENERIC_SERIALUSB
+BARAM.menu.usb.HID=HID (keyboard and mouse)
+BARAM.menu.usb.HID.build.enable_usb={build.usb_flags} -DUSBD_USE_HID_COMPOSITE
+
+BARAM.menu.opt.osstd=Smallest (-Os default)
+BARAM.menu.opt.oslto=Smallest (-Os) with LTO
+BARAM.menu.opt.oslto.build.flags.optimize=-Os -flto
+BARAM.menu.opt.o1std=Fast (-O1)
+BARAM.menu.opt.o1std.build.flags.optimize=-O1
+BARAM.menu.opt.o1lto=Fast (-O1) with LTO
+BARAM.menu.opt.o1lto.build.flags.optimize=-O1 -flto
+BARAM.menu.opt.o2std=Faster (-O2)
+BARAM.menu.opt.o2std.build.flags.optimize=-O2
+BARAM.menu.opt.o2lto=Faster (-O2) with LTO
+BARAM.menu.opt.o2lto.build.flags.optimize=-O2 -flto
+BARAM.menu.opt.o3std=Fastest (-O3)
+BARAM.menu.opt.o3std.build.flags.optimize=-O3
+BARAM.menu.opt.o3lto=Fastest (-O3) with LTO
+BARAM.menu.opt.o3lto.build.flags.optimize=-O3 -flto
+BARAM.menu.opt.ogstd=Debug (-Og)
+BARAM.menu.opt.ogstd.build.flags.optimize=-Og
+BARAM.menu.opt.o0std=No Optimization (-O0)
+BARAM.menu.opt.o0std.build.flags.optimize=-O0
+
+BARAM.menu.dbg.none=None
+BARAM.menu.dbg.enable_sym=Symbols Enabled (-g)
+BARAM.menu.dbg.enable_sym.build.flags.debug=-g -DNDEBUG
+BARAM.menu.dbg.enable_log=Core logs Enabled
+BARAM.menu.dbg.enable_log.build.flags.debug=
+BARAM.menu.dbg.enable_all=Core Logs and Symbols Enabled (-g)
+BARAM.menu.dbg.enable_all.build.flags.debug=-g
+
+BARAM.menu.rtlib.nano=Newlib Nano (default)
+BARAM.menu.rtlib.nanofp=Newlib Nano + Float Printf
+BARAM.menu.rtlib.nanofp.build.flags.ldspecs=--specs=nano.specs -u _printf_float
+BARAM.menu.rtlib.nanofs=Newlib Nano + Float Scanf
+BARAM.menu.rtlib.nanofs.build.flags.ldspecs=--specs=nano.specs -u _scanf_float
+BARAM.menu.rtlib.nanofps=Newlib Nano + Float Printf/Scanf
+BARAM.menu.rtlib.nanofps.build.flags.ldspecs=--specs=nano.specs -u _printf_float -u _scanf_float
+BARAM.menu.rtlib.full=Newlib Standard
+BARAM.menu.rtlib.full.build.flags.ldspecs=
+
+# --- HiGenis -----------------------------------------------------------------------
+
+# Writes the application into the external QSPI flash over SWD using OpenOCD's
+# stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
+# peripheral registers directly and uploads a small SRAM stub for bulk writes.
+HiGenis.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
+HiGenis.menu.upload_method.qspiMethod.upload.protocol=stlink
+HiGenis.menu.upload_method.qspiMethod.upload.tool=openocd_qspi
+
+# Drag-and-drop over the bootloader's UF2 mass storage volume.
+# Requires the bootloader's USB stack, which is not implemented yet.
+HiGenis.menu.upload_method.uf2Method=UF2 (bootloader MSC)
+HiGenis.menu.upload_method.uf2Method.upload.tool=uf2_upload
+
+HiGenis.menu.xserial.generic=Enabled (generic 'Serial')
+HiGenis.menu.xserial.none=Enabled (no generic 'Serial')
+HiGenis.menu.xserial.none.build.xSerial=-DHAL_UART_MODULE_ENABLED -DHWSERIAL_NONE
+HiGenis.menu.xserial.disabled=Disabled (No Serial support)
+HiGenis.menu.xserial.disabled.build.xSerial=
+
+HiGenis.menu.usb.none=None
+HiGenis.menu.usb.CDCgen=CDC (generic 'Serial' supersede U(S)ART)
+HiGenis.menu.usb.CDCgen.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC
+HiGenis.menu.usb.CDC=CDC (no generic 'Serial')
+HiGenis.menu.usb.CDC.build.enable_usb={build.usb_flags} -DUSBD_USE_CDC -DDISABLE_GENERIC_SERIALUSB
+HiGenis.menu.usb.HID=HID (keyboard and mouse)
+HiGenis.menu.usb.HID.build.enable_usb={build.usb_flags} -DUSBD_USE_HID_COMPOSITE
+
+HiGenis.menu.opt.osstd=Smallest (-Os default)
+HiGenis.menu.opt.oslto=Smallest (-Os) with LTO
+HiGenis.menu.opt.oslto.build.flags.optimize=-Os -flto
+HiGenis.menu.opt.o1std=Fast (-O1)
+HiGenis.menu.opt.o1std.build.flags.optimize=-O1
+HiGenis.menu.opt.o1lto=Fast (-O1) with LTO
+HiGenis.menu.opt.o1lto.build.flags.optimize=-O1 -flto
+HiGenis.menu.opt.o2std=Faster (-O2)
+HiGenis.menu.opt.o2std.build.flags.optimize=-O2
+HiGenis.menu.opt.o2lto=Faster (-O2) with LTO
+HiGenis.menu.opt.o2lto.build.flags.optimize=-O2 -flto
+HiGenis.menu.opt.o3std=Fastest (-O3)
+HiGenis.menu.opt.o3std.build.flags.optimize=-O3
+HiGenis.menu.opt.o3lto=Fastest (-O3) with LTO
+HiGenis.menu.opt.o3lto.build.flags.optimize=-O3 -flto
+HiGenis.menu.opt.ogstd=Debug (-Og)
+HiGenis.menu.opt.ogstd.build.flags.optimize=-Og
+HiGenis.menu.opt.o0std=No Optimization (-O0)
+HiGenis.menu.opt.o0std.build.flags.optimize=-O0
+
+HiGenis.menu.dbg.none=None
+HiGenis.menu.dbg.enable_sym=Symbols Enabled (-g)
+HiGenis.menu.dbg.enable_sym.build.flags.debug=-g -DNDEBUG
+HiGenis.menu.dbg.enable_log=Core logs Enabled
+HiGenis.menu.dbg.enable_log.build.flags.debug=
+HiGenis.menu.dbg.enable_all=Core Logs and Symbols Enabled (-g)
+HiGenis.menu.dbg.enable_all.build.flags.debug=-g
+
+HiGenis.menu.rtlib.nano=Newlib Nano (default)
+HiGenis.menu.rtlib.nanofp=Newlib Nano + Float Printf
+HiGenis.menu.rtlib.nanofp.build.flags.ldspecs=--specs=nano.specs -u _printf_float
+HiGenis.menu.rtlib.nanofs=Newlib Nano + Float Scanf
+HiGenis.menu.rtlib.nanofs.build.flags.ldspecs=--specs=nano.specs -u _scanf_float
+HiGenis.menu.rtlib.nanofps=Newlib Nano + Float Printf/Scanf
+HiGenis.menu.rtlib.nanofps.build.flags.ldspecs=--specs=nano.specs -u _printf_float -u _scanf_float
+HiGenis.menu.rtlib.full=Newlib Standard
+HiGenis.menu.rtlib.full.build.flags.ldspecs=

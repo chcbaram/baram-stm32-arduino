@@ -1,0 +1,55 @@
+# Programmers for the "Burn Bootloader" action.
+#
+# The bootloader image ships in this package under bootloaders/. Pick the
+# method that matches how the board is connected:
+#
+#   USB DFU   - no debug probe needed. Hold SW1 (BOOT0, pulled down by R7 10K),
+#               press and release SW3 (NRST), then release SW1. The board comes
+#               up as the STM32 ROM bootloader, 0483:df11. Then Burn Bootloader.
+#   ST-LINK   - needs an ST-LINK on the SWD pads (PA13/PA14). Works regardless
+#               of what is currently in flash, so this is the recovery path.
+#
+# Neither touches the external QSPI flash, so the application and its TAG
+# survive a bootloader update - verified on hardware. Note the flip side: after
+# reflashing the bootloader the board immediately boots whatever application was
+# already in QSPI.
+#
+# Recovery, if a bad application makes the board unusable: ask the bootloader to
+# stay put by writing its boot request straight into the RTC backup register
+# over SWD, then reset.
+#
+#   openocd -f interface/stlink.cfg -f target/stm32h7x.cfg \
+#     -c "init; halt; mww 0x5800405C 0x00000003; reset run; exit"
+#
+# 0x5800405C is RTC_BKP_DR3; bit0 keeps the bootloader resident, bit1 also
+# brings up the UF2 mass storage volume.
+
+#**********************************************
+# USB DFU via the STM32 system bootloader
+#**********************************************
+dfuBoot.name=USB DFU (STM32 system bootloader)
+dfuBoot.program.tool=bootburn
+dfuBoot.program.script=dfu-util.sh
+dfuBoot.program.path={runtime.tools.STM32Tools.path}
+dfuBoot.program.dfu_vidpid=0483:df11
+
+dfuBoot.program.burn_pattern="{busybox}" sh "{program.path}/{program.script}" -d {program.dfu_vidpid} -a 0 -s 0x08000000:leave -D "{bootloader.file}"
+
+dfuBoot.program.params.verbose=
+dfuBoot.program.params.quiet=
+dfuBoot.program.pattern=echo "Select the ST-LINK programmer to upload a sketch, or use Tools > Upload method."
+
+#**********************************************
+# ST-LINK over SWD via OpenOCD
+#**********************************************
+stlinkBoot.name=ST-LINK (SWD)
+stlinkBoot.program.tool=bootburn
+stlinkBoot.program.path={openocd_dir}
+stlinkBoot.program.cmd=bin/openocd
+stlinkBoot.program.cmd.windows=bin/openocd.exe
+
+stlinkBoot.program.burn_pattern="{program.path}/{program.cmd}" -f interface/stlink.cfg -f target/{openocd.target}.cfg -c "program {{bootloader.file}} 0x08000000 verify reset exit"
+
+stlinkBoot.program.params.verbose=
+stlinkBoot.program.params.quiet=
+stlinkBoot.program.pattern="{program.path}/{program.cmd}" -f interface/stlink.cfg -f target/{openocd.target}.cfg -f "{runtime.platform.path}/debugger/{build.qspi_cfg}" -c "program {{build.path}/{build.project_name}.elf} verify reset exit"
