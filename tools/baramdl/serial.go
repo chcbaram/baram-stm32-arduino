@@ -86,6 +86,27 @@ func listPorts() (boot, app []string, err error) {
 	return boot, app, nil
 }
 
+// isBootloaderPort reports whether a port name belongs to the bootloader.
+// Unknown ports answer true, so an explicitly named port the enumerator cannot
+// classify is still tried.
+func isBootloaderPort(name string) bool {
+	boot, app, err := listPorts()
+	if err != nil {
+		return true
+	}
+	for _, p := range boot {
+		if p == name {
+			return true
+		}
+	}
+	for _, p := range app {
+		if p == name {
+			return false
+		}
+	}
+	return true
+}
+
 // findPort locates the bootloader by USB VID/PID rather than by port name,
 // which differs per OS and between plug-ins.
 //

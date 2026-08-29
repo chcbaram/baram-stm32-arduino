@@ -29,9 +29,14 @@
  * it; board.lcd is a thin wrapper over the same calls.
  *
  * src/hw/ holds what came from the bootloader, arranged the way it is there, so
- * a file can be copied between the two projects unchanged. Only src/hw/port/
- * is new: the adapters that put the bootloader's spiXxx() and gpioPinWrite()
- * on top of the Arduino platform.
+ * a file can be copied between the two projects with only its include prefix
+ * adjusted. gpio.cpp and spi.cpp are the exception: they are the adapters that
+ * put the bootloader's gpioPinWrite() and spiXxx() on the Arduino platform.
+ *
+ * The board itself is described by hw_def.h, which lives in the variant rather
+ * than here - it is per board, and the variant is already on the include path
+ * for every compile, which is what lets the SD library share these drivers
+ * without depending on this one.
  */
 
 #include <Arduino.h>
@@ -103,10 +108,27 @@ public:
   uint16_t *frameBuffer(void)              { return lcdGetFrameBuffer(); }
 };
 
+class SDClass;
+
 class WeActH750
 {
 public:
   WeActLcd lcd;
+
+  /*
+   * The microSD socket, through the SD library's global - a reference, so
+   * board.sd and the SD object a sketch or another library uses are the same
+   * thing: open a file through one and read it through the other.
+   *
+   * Only forward declared here. arduino-cli discovers libraries by scanning the
+   * sketch's own includes, and an <SD.h> reached only from this header is not
+   * found, so a sketch that wants the card writes #include <SD.h> as well. That
+   * is also what keeps a sketch with no interest in SD from compiling it.
+   *
+   * board.begin() does not mount it - a board with an empty slot should still
+   * come up. Call board.sd.begin() when a card is wanted.
+   */
+  SDClass &sd;
 
   // Brings up Serial, the LCD and the on-board LED and button. Returns false
   // if any part failed; the parts that did come up still work.
@@ -127,6 +149,8 @@ public:
   void enterBootloader(bool massStorage = false);
 
   const char *version(void) { return WEACT_H750_VER_STR; }
+
+  WeActH750();
 
 private:
   bool is_init = false;

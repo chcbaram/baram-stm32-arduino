@@ -190,8 +190,15 @@ func run(portName, writePath string, showInfo, doJump, noRun, verbose bool) erro
 	}
 
 	if portName != "" {
-		if err := tryPort(portName); err != nil && verbose {
-			fmt.Printf("%s did not answer, looking for the board\n", portName)
+		// arduino-cli passes the port the sketch was on. Opening it and waiting
+		// out the full command timeout costs seconds on every first upload, so
+		// ask the USB IDs whether this is the bootloader before trying it.
+		if isBootloaderPort(portName) {
+			if err := tryPort(portName); err != nil && verbose {
+				fmt.Printf("%s did not answer, looking for the board\n", portName)
+			}
+		} else if verbose {
+			fmt.Printf("%s is not the bootloader, looking for it\n", portName)
 		}
 	}
 	if t == nil {

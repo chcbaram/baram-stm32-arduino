@@ -177,7 +177,28 @@ Frames go out over DMA on SPI4, so the 5 ms a 160x80 frame takes on the wire is
 time the sketch can spend on the next one. `board.lcd.available()` is false
 until the previous frame has left.
 
-Examples: `BoardTest`, `LcdHelloWorld`, `LcdHangul`.
+Examples: `BoardTest`, `LcdHelloWorld`, `LcdHangul`, `SdCard`.
+
+### The SD library
+
+`#include <SD.h>` gives the standard Arduino SD API - `SD.begin()`, `File`,
+`openNextFile()` - over this board's SDMMC socket in 4-bit mode, with DMA and
+FatFs underneath.
+
+It has to be a separate implementation: the standard library talks SPI, which
+these pins cannot do. STM32duino's `STM32SD` does drive SDMMC, but it is GPLv3,
+which would reach into every sketch that opened a file; FatFs is ChaN's
+permissive licence.
+
+`File` derives from `Stream`, so libraries that take a `Stream&` - image
+readers, audio players, JSON parsers - work with files from this card.
+
+**Not yet working on hardware.** It builds and the API is complete, but a sketch
+that calls `SD.begin()` hangs before USB comes up. Under investigation.
+
+Card detect is not wired: PD4 reaches the socket switch only through solder
+bridge SB2, which is open, so the pin floats. `hw_def.h` assumes a card is
+present and lets `sdInit()` report an empty slot instead.
 
 ### Pinout
 

@@ -1,6 +1,9 @@
 #include "WeActH750.h"
+#include <SD.h>
 
 #include <stdarg.h>
+
+WeActH750::WeActH750() : sd(SD) {}
 
 WeActH750 board;
 

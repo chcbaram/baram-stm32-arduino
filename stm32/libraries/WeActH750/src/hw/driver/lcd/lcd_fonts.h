@@ -9,7 +9,7 @@
 #define SRC_COMMON_HW_INCLUDE_LCD_LCD_FONTS_H_
 
 
-#include "hw/hw_def.h"
+#include "hw_def.h"
 
 
 typedef struct
