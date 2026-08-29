@@ -33,7 +33,7 @@ dfuBoot.program.script=dfu-util.sh
 dfuBoot.program.path={runtime.tools.STM32Tools.path}
 dfuBoot.program.dfu_vidpid=0483:df11
 
-dfuBoot.program.burn_pattern="{busybox}" sh "{program.path}/{program.script}" -d {program.dfu_vidpid} -a 0 -s 0x08000000:leave -D "{bootloader.file}"
+dfuBoot.program.burn_pattern="{busybox}" sh "{program.path}/{program.script}" -d {program.dfu_vidpid} -a 0 -s 0x08000000:leave -D "{bootloader.file}.bin"
 
 dfuBoot.program.params.verbose=
 dfuBoot.program.params.quiet=
@@ -48,8 +48,10 @@ stlinkBoot.program.path={openocd_dir}
 stlinkBoot.program.cmd=bin/openocd
 stlinkBoot.program.cmd.windows=bin/openocd.exe
 
-stlinkBoot.program.burn_pattern="{program.path}/{program.cmd}" -f interface/stlink.cfg -f target/{openocd.target}.cfg -c "program {{bootloader.file}} 0x08000000 verify reset exit"
+# reset_config none is required here too: NRST is driven by a MAX809 supervisor,
+# so an adapter-driven SRST never produces a halt OpenOCD can time.
+stlinkBoot.program.burn_pattern="{program.path}/{program.cmd}" -f interface/stlink.cfg -f target/{openocd.target}.cfg -c "reset_config none separate" -c "program {{bootloader.file}.hex} verify reset exit"
 
 stlinkBoot.program.params.verbose=
 stlinkBoot.program.params.quiet=
-stlinkBoot.program.pattern="{program.path}/{program.cmd}" -f interface/stlink.cfg -f target/{openocd.target}.cfg -f "{runtime.platform.path}/debugger/{build.qspi_cfg}" -c "program {{build.path}/{build.project_name}.elf} verify reset exit"
+stlinkBoot.program.pattern="{program.path}/{program.cmd}" -f "{runtime.platform.path}/debugger/{build.qspi_cfg}" -c "program {{build.path}/{build.project_name}.bin} 0x90001000 verify reset exit"

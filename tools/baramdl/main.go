@@ -162,28 +162,48 @@ func run(portName, writePath string, showInfo, doJump, verbose bool) error {
 		}
 	}
 
-	if portName == "" {
+	// A port given with --port is only a hint. arduino-cli passes the port the
+	// sketch was on, and by the time the upload tool runs the board has already
+	// rebooted into the bootloader and come back under a different name. So try
+	// it, and fall back to finding the bootloader ourselves.
+	var (
+		t   *serialTransport
+		c   *client
+		raw []byte
+	)
+	tryPort := func(name string) error {
 		var err error
-		if portName, err = findPort(); err != nil {
+		if t, err = openSerial(name); err != nil {
 			return err
 		}
-	}
-	if verbose {
-		fmt.Printf("port     %s @ %d\n", portName, cmdBaudRate)
+		c = newClient(t)
+		if raw, err = c.call(cmdInfo, nil, shortTimeout); err != nil {
+			t.Close()
+			t = nil
+			return err
+		}
+		if verbose {
+			fmt.Printf("port     %s @ %d\n", name, cmdBaudRate)
+		}
+		return nil
 	}
 
-	t, err := openSerial(portName)
-	if err != nil {
-		return err
+	if portName != "" {
+		if err := tryPort(portName); err != nil && verbose {
+			fmt.Printf("%s did not answer, looking for the board\n", portName)
+		}
+	}
+	if t == nil {
+		found, err := findPort()
+		if err != nil {
+			return err
+		}
+		if err := tryPort(found); err != nil {
+			return fmt.Errorf("the board did not answer on %s: %w\n"+
+				"Is it in bootloader mode? Press reset twice quickly to stay there", found, err)
+		}
 	}
 	defer t.Close()
-	c := newClient(t)
-
-	raw, err := c.call(cmdInfo, nil, shortTimeout)
-	if err != nil {
-		return fmt.Errorf("the board did not answer: %w\n"+
-			"Is it in bootloader mode? Press reset twice quickly to stay there", err)
-	}
 	inf, err := parseInfo(raw)
 	if err != nil {
 		return err

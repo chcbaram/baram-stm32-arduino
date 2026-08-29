@@ -138,6 +138,7 @@ HiGenis.menu.pnum.HIGENIS_DUMMY.debug.svd_file={runtime.tools.STM32_SVD.path}/sv
 # 1200 bps touch first, which the sketch answers by rebooting into the
 # bootloader, then waits for the bootloader's port to appear.
 BARAM.menu.upload_method.usbMethod=Bootloader USB (CDC)
+BARAM.menu.upload_method.usbMethod.upload.protocol=serial
 BARAM.menu.upload_method.usbMethod.upload.tool=baram_boot
 BARAM.menu.upload_method.usbMethod.upload.use_1200bps_touch=true
 BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
@@ -150,6 +151,7 @@ BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
 # CDC method can - double-tap first, then upload. The .uf2 is built either way,
 # so it can also just be dragged onto the drive by hand.
 BARAM.menu.upload_method.uf2Method=UF2 mass storage (double-tap first)
+BARAM.menu.upload_method.uf2Method.upload.protocol=uf2
 BARAM.menu.upload_method.uf2Method.upload.tool=baram_uf2
 
 BARAM.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
@@ -216,6 +218,7 @@ BARAM.menu.rtlib.full.build.flags.ldspecs=
 # 1200 bps touch first, which the sketch answers by rebooting into the
 # bootloader, then waits for the bootloader's port to appear.
 HiGenis.menu.upload_method.usbMethod=Bootloader USB (CDC)
+HiGenis.menu.upload_method.usbMethod.upload.protocol=serial
 HiGenis.menu.upload_method.usbMethod.upload.tool=baram_boot
 HiGenis.menu.upload_method.usbMethod.upload.use_1200bps_touch=true
 HiGenis.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
@@ -228,6 +231,7 @@ HiGenis.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
 # CDC method can - double-tap first, then upload. The .uf2 is built either way,
 # so it can also just be dragged onto the drive by hand.
 HiGenis.menu.upload_method.uf2Method=UF2 mass storage (double-tap first)
+HiGenis.menu.upload_method.uf2Method.upload.protocol=uf2
 HiGenis.menu.upload_method.uf2Method.upload.tool=baram_uf2
 
 HiGenis.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)

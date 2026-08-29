@@ -224,7 +224,11 @@ tools.openocd_qspi.cmd=bin/openocd
 tools.openocd_qspi.cmd.windows=bin/openocd.exe
 tools.openocd_qspi.upload.params.verbose=-d2
 tools.openocd_qspi.upload.params.quiet=-d0
-tools.openocd_qspi.upload.pattern="{path}/{cmd}" {upload.verbose} -f interface/{upload.protocol}.cfg -f target/{openocd.target}.cfg -f "{runtime.platform.path}/debugger/{build.qspi_cfg}" -c "program {{build.path}/{build.project_name}.elf} verify reset exit"
+# weact_h750_qspi.cfg sources the interface and target scripts itself, because
+# it has to set CHIPNAME and reset_config before target/stm32h7x.cfg runs.
+# The image is written as a .bin at an explicit address rather than as an ELF:
+# that is the form verified on hardware.
+tools.openocd_qspi.upload.pattern="{path}/{cmd}" {upload.verbose} -f "{runtime.platform.path}/debugger/{build.qspi_cfg}" -c "program {{build.path}/{build.project_name}.bin} 0x90001000 verify reset exit"
 
 # Write the sketch through the board's own bootloader over USB.
 #
@@ -256,7 +260,7 @@ tools.baram_uf2.upload.pattern="{path}/{cmd}" --uf2-copy "{build.path}/{build.pr
 # Arduino's "Burn Bootloader" action runs this with the properties of whichever
 # entry is selected in Tools > Programmer, so programmers.txt decides between
 # USB DFU and ST-LINK. The image itself ships in this package.
-tools.bootburn.bootloader.file={runtime.platform.path}/bootloaders/{build.bootloader_name}/{build.bootloader_name}.bin
+tools.bootburn.bootloader.file={runtime.platform.path}/bootloaders/{build.bootloader_name}/{build.bootloader_name}
 tools.bootburn.bootloader.params.verbose=
 tools.bootburn.bootloader.params.quiet=
 tools.bootburn.bootloader.pattern={program.burn_pattern}

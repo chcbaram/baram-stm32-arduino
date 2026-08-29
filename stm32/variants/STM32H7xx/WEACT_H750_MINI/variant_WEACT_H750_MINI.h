@@ -215,17 +215,35 @@
 #endif
 
 // UART Definitions
+//
+// PA9/PA10 can be either LPUART1 (AF3) or USART1 (AF7). The upstream WeAct
+// variant picks LPUART1, but the bootloader drives these pins as USART1 and
+// there is no reason for the sketch to differ: keeping them the same peripheral
+// means a serial adapter that shows the bootloader's log also shows the
+// sketch's, and it keeps the baud rate divisor out of the D3 domain, whose
+// clocking under the 480 MHz configuration is not something anything has
+// checked. The _ALT1 suffix selects the USART1 mapping of the same pad.
 #ifndef SERIAL_UART_INSTANCE
-  #define SERIAL_UART_INSTANCE  101
+  #define SERIAL_UART_INSTANCE  1
 #endif
 
 // Default pin used for generic 'Serial' instance
 // Mandatory for Firmata
 #ifndef PIN_SERIAL_RX
-  #define PIN_SERIAL_RX         PA10
+  #define PIN_SERIAL_RX         PA10_ALT1
 #endif
 #ifndef PIN_SERIAL_TX
-  #define PIN_SERIAL_TX         PA9
+  #define PIN_SERIAL_TX         PA9_ALT1
+#endif
+
+// Serial1 is the same port. With USB CDC enabled 'Serial' is the USB one and
+// the core compiles the PIN_SERIAL_* branch out, so USART1 needs its pins named
+// here too or it would fall back to whatever the pin map happens to list first.
+#ifndef PIN_SERIAL1_RX
+  #define PIN_SERIAL1_RX        PA10_ALT1
+#endif
+#ifndef PIN_SERIAL1_TX
+  #define PIN_SERIAL1_TX        PA9_ALT1
 #endif
 
 // Extra HAL modules

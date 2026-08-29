@@ -22,6 +22,7 @@ const (
 	bootVID    = 0x1209
 	bootPIDCDC = 0xB750
 	bootPIDMSC = 0xB751
+	appPID     = 0xB752
 )
 
 type serialTransport struct {
@@ -64,34 +65,92 @@ func (s *serialTransport) Read(p []byte) (int, error) {
 func (s *serialTransport) FlushInput() error { return s.port.ResetInputBuffer() }
 func (s *serialTransport) Close() error      { return s.port.Close() }
 
+// listPorts returns the ports whose USB IDs belong to this board, split by
+// whether they are the bootloader or a running sketch.
+func listPorts() (boot, app []string, err error) {
+	ports, err := enumerator.GetDetailedPortsList()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, p := range ports {
+		if !p.IsUSB || parseHex(p.VID) != bootVID {
+			continue
+		}
+		switch parseHex(p.PID) {
+		case bootPIDCDC, bootPIDMSC:
+			boot = append(boot, p.Name)
+		case appPID:
+			app = append(app, p.Name)
+		}
+	}
+	return boot, app, nil
+}
+
 // findPort locates the bootloader by USB VID/PID rather than by port name,
 // which differs per OS and between plug-ins.
+//
+// If only a running sketch is found, it is asked to hand over with a 1200 bps
+// touch and the bootloader's port is waited for. arduino-cli does this itself
+// when upload.use_1200bps_touch is set, but doing it here too means the tool
+// works the same way when it is run by hand.
 func findPort() (string, error) {
-	ports, err := enumerator.GetDetailedPortsList()
+	boot, app, err := listPorts()
 	if err != nil {
 		return "", err
 	}
-	var matches []string
-	for _, p := range ports {
-		if !p.IsUSB {
-			continue
+	if len(boot) == 0 && len(app) > 0 {
+		fmt.Printf("found a running sketch on %s, asking it to enter the bootloader\n", app[0])
+		if err := touch1200(app[0]); err != nil {
+			return "", err
 		}
-		vid, pid := parseHex(p.VID), parseHex(p.PID)
-		if vid == bootVID && (pid == bootPIDCDC || pid == bootPIDMSC) {
-			matches = append(matches, p.Name)
+		if boot, err = waitForBootloader(10 * time.Second); err != nil {
+			return "", err
 		}
 	}
-	switch len(matches) {
+
+	switch len(boot) {
 	case 0:
-		return "", fmt.Errorf("no board found (looking for USB %04X:%04X or %04X:%04X).\n"+
-			"Put the board in bootloader mode by pressing reset twice quickly, or pass --port",
-			bootVID, bootPIDCDC, bootVID, bootPIDMSC)
+		return "", fmt.Errorf("no board found (looking for USB %04X:%04X, %04X:%04X or %04X:%04X).\n"+
+			"Press reset twice quickly to stay in the bootloader, or pass --port",
+			bootVID, bootPIDCDC, bootVID, bootPIDMSC, bootVID, appPID)
 	case 1:
-		return matches[0], nil
+		return boot[0], nil
 	default:
 		return "", fmt.Errorf("found %d boards (%s); pass --port to choose one",
-			len(matches), strings.Join(matches, ", "))
+			len(boot), strings.Join(boot, ", "))
 	}
+}
+
+// touch1200 opens the port at 1200 baud and closes it, dropping DTR. The sketch
+// recognises that pair and reboots into the bootloader.
+func touch1200(name string) error {
+	port, err := serial.Open(name, &serial.Mode{BaudRate: 1200})
+	if err != nil {
+		return fmt.Errorf("1200 bps touch on %s: %w", name, err)
+	}
+	_ = port.SetDTR(false)
+	time.Sleep(50 * time.Millisecond)
+	return port.Close()
+}
+
+// waitForBootloader polls for the bootloader's port. The board disappears from
+// the bus and comes back as a different device, so there is nothing to hold on
+// to across the reset.
+func waitForBootloader(timeout time.Duration) ([]string, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(250 * time.Millisecond)
+		boot, _, err := listPorts()
+		if err != nil {
+			return nil, err
+		}
+		if len(boot) > 0 {
+			// Give the host a moment to finish setting the port up.
+			time.Sleep(250 * time.Millisecond)
+			return boot, nil
+		}
+	}
+	return nil, fmt.Errorf("the board did not come back as the bootloader within %s", timeout)
 }
 
 func parseHex(s string) uint64 {

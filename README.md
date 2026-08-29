@@ -85,7 +85,7 @@ sketch does.
 
 | Method | Needs | |
 |---|---|---|
-| Bootloader USB (CDC) | a USB cable | default, fully automatic |
+| Bootloader USB (CDC) | a USB cable | default, fully automatic, ~300 KB/s |
 | UF2 mass storage | a reset double-tap | copies the `.uf2` onto the drive |
 | OpenOCD QSPI (SWD) | ST-LINK on PA13/PA14 | `debugger/weact_h750_qspi.cfg`, untested |
 
@@ -100,6 +100,18 @@ why the menu entry says so.
 The conversion is built into `baramdl` rather than vendored from Microsoft's
 `uf2conv.py`, because the Arduino IDE ships no Python and a post-build step that
 needs one would fail outright on Windows.
+
+Two things about the upload plumbing are worth knowing if you add a board:
+
+- **Every upload method needs `upload.protocol`.** arduino-cli looks the tool up
+  as `upload.tool.<protocol>`; with no protocol it cannot form the name, never
+  reaches the `upload.tool.default` fallback, and reports "A programmer is
+  required to upload" - the same message it gives for a tool that does not
+  exist, which makes it easy to misread.
+- **The port arduino-cli passes is the one from before the 1200 bps touch.** By
+  the time the tool runs, the board has rebooted and come back under a different
+  name, so `baramdl` treats `--port` as a hint and falls back to finding the
+  bootloader itself.
 
 USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
 

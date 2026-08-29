@@ -2,10 +2,13 @@
 
 | | |
 |---|---|
-| version | `V260829R1` |
+| version | `V260830R2` |
 | name | `WEACT-H750-BOOT` |
-| size | 99,272 bytes |
-| sha256 | `383f76f0c83b34548fda8ebe7e1852edb8f2e2ecdc5d4b7056f7e5e1b289263b` |
+| size | 99,760 bytes |
+| sha256 | `157178aafe47b77516c8a582a8028e75c61ce95b61ef4a6930f355a3cf1b28f5` |
+
+Shipped as both `.bin` and `.hex`. The `.hex` carries its own load addresses,
+so it can be handed to a programmer without naming 0x08000000 separately.
 
 Built from the `weact-h750-mini` repository, `firmware/weact-h750-boot`, and
 verified on hardware running a 480 MHz Arduino sketch from QSPI.
