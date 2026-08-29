@@ -32,28 +32,33 @@ static volatile bool is_tx_done = false;
  * to memory. Without invalidating after a read the CPU keeps serving stale
  * cache lines; without cleaning before a write the card gets stale memory.
  *
- * Both operate on whole 32-byte lines, so a range that does not start and end
- * on a line boundary would drag in neighbouring data. FatFs hands over sector
- * buffers that are 512 bytes and word aligned, and the caller's own buffers can
- * be anything, so the range is widened to line boundaries. That is safe for
- * invalidate-after-read only because the surrounding bytes belong to the same
- * buffer or are not live; a bounce buffer would be the alternative, at the cost
- * of a copy per sector.
+ * The cache operates on whole 32-byte lines, so the range must never be widened
+ * to cover data that is not part of the transfer. Invalidating discards a dirty
+ * line instead of writing it back, so widening throws away whatever a neighbour
+ * had just written. That is not theoretical here: FatFs hands over its 512-byte
+ * window, which sits immediately before the SDMMC handle in .bss, and widening
+ * the tail to a line boundary discarded the handle's Instance and Init fields
+ * that sdInit() had written moments earlier - leaving Instance NULL from the
+ * first read onwards.
+ *
+ * So the range is never widened. A buffer that is already line aligned is used
+ * for DMA directly; anything else goes through a bounce buffer that is aligned
+ * by construction, one sector at a time. Transfers are always whole 512-byte
+ * sectors, so only the start address can be misaligned.
  */
-#define CACHE_LINE  32
+#define CACHE_LINE      32
+#define IS_LINE_ALIGNED(a)  ((((uint32_t)(a)) & (CACHE_LINE - 1)) == 0)
 
-static void cacheCleanRange(const void *addr, uint32_t size)
+static uint8_t sd_bounce[BLOCKSIZE] __attribute__((aligned(CACHE_LINE)));
+
+static void cacheClean(const void *addr, uint32_t size)
 {
-  uint32_t start = (uint32_t)addr & ~(CACHE_LINE - 1);
-  uint32_t end   = ((uint32_t)addr + size + CACHE_LINE - 1) & ~(CACHE_LINE - 1);
-  SCB_CleanDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+  SCB_CleanDCache_by_Addr((uint32_t *)addr, (int32_t)size);
 }
 
-static void cacheInvalidateRange(const void *addr, uint32_t size)
+static void cacheInvalidate(const void *addr, uint32_t size)
 {
-  uint32_t start = (uint32_t)addr & ~(CACHE_LINE - 1);
-  uint32_t end   = ((uint32_t)addr + size + CACHE_LINE - 1) & ~(CACHE_LINE - 1);
-  SCB_InvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+  SCB_InvalidateDCache_by_Addr((uint32_t *)addr, (int32_t)size);
 }
 
 // Waits for a DMA completion flag, then for the card to leave its busy state.
@@ -172,44 +177,84 @@ bool sdDeInit(void)
 }
 
 
-bool sdReadBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
+// One DMA transfer straight into the caller's buffer. The buffer must be cache
+// line aligned; sdReadBlocks() is what guarantees that.
+static bool sdReadDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
 {
-  bool ret = false;
+  uint32_t size = num_of_blocks * BLOCKSIZE;
 
-  if (is_init == false) return false;
+  // Drop any dirty lines first. If one were evicted while the DMA is running it
+  // would land on top of what the card just delivered.
+  cacheInvalidate(p_data, size);
 
   is_rx_done = false;
 
-  if (HAL_SD_ReadBlocks_DMA(&uSdHandle, (uint8_t *)p_data, block_addr, num_of_blocks) == HAL_OK)
+  if (HAL_SD_ReadBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
   {
-    ret = sdWaitDone(&is_rx_done, timeout_ms);
+    return false;
+  }
+  if (sdWaitDone(&is_rx_done, timeout_ms) == false)
+  {
+    return false;
   }
 
-  if (ret == true)
+  cacheInvalidate(p_data, size);
+  return true;
+}
+
+bool sdReadBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
+{
+  if (is_init == false) return false;
+
+  if (IS_LINE_ALIGNED(p_data))
   {
-    cacheInvalidateRange(p_data, num_of_blocks * BLOCKSIZE);
+    return sdReadDirect(block_addr, p_data, num_of_blocks, timeout_ms);
   }
 
-  return ret;
+  // Misaligned caller buffer: one sector at a time through the bounce buffer.
+  for (uint32_t i = 0; i < num_of_blocks; i++)
+  {
+    if (sdReadDirect(block_addr + i, sd_bounce, 1, timeout_ms) == false)
+    {
+      return false;
+    }
+    memcpy(&p_data[i * BLOCKSIZE], sd_bounce, BLOCKSIZE);
+  }
+  return true;
+}
+
+static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
+{
+  // Push the data out of the cache before the DMA reads it.
+  cacheClean(p_data, num_of_blocks * BLOCKSIZE);
+
+  is_tx_done = false;
+
+  if (HAL_SD_WriteBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
+  {
+    return false;
+  }
+  return sdWaitDone(&is_tx_done, timeout_ms);
 }
 
 bool sdWriteBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
 {
-  bool ret = false;
-
   if (is_init == false) return false;
 
-  // Push the data out of the cache before the DMA reads it.
-  cacheCleanRange(p_data, num_of_blocks * BLOCKSIZE);
-
-  is_tx_done = false;
-
-  if (HAL_SD_WriteBlocks_DMA(&uSdHandle, (uint8_t *)p_data, block_addr, num_of_blocks) == HAL_OK)
+  if (IS_LINE_ALIGNED(p_data))
   {
-    ret = sdWaitDone(&is_tx_done, timeout_ms);
+    return sdWriteDirect(block_addr, p_data, num_of_blocks, timeout_ms);
   }
 
-  return ret;
+  for (uint32_t i = 0; i < num_of_blocks; i++)
+  {
+    memcpy(sd_bounce, &p_data[i * BLOCKSIZE], BLOCKSIZE);
+    if (sdWriteDirect(block_addr + i, sd_bounce, 1, timeout_ms) == false)
+    {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool sdEraseBlocks(uint32_t start_addr, uint32_t end_addr)
