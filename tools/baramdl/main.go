@@ -112,6 +112,7 @@ func main() {
 		write    = flag.String("write", "", "firmware .bin to write")
 		info     = flag.Bool("info", false, "report the connected board and exit")
 		jump     = flag.Bool("jump", false, "leave the bootloader and run the application")
+		noRun    = flag.Bool("no-run", false, "after writing, stay in the bootloader instead of running the sketch")
 		uf2Out   = flag.String("uf2", "", "convert a .bin to UF2; pass the output path as the next argument")
 		uf2Copy  = flag.String("uf2-copy", "", "copy a .bin or .uf2 onto the bootloader's mass storage volume")
 		verbose  = flag.Bool("v", false, "verbose")
@@ -138,13 +139,13 @@ func main() {
 		return
 	}
 
-	if err := run(*portName, *write, *info, *jump, *verbose); err != nil {
+	if err := run(*portName, *write, *info, *jump, *noRun, *verbose); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(portName, writePath string, showInfo, doJump, verbose bool) error {
+func run(portName, writePath string, showInfo, doJump, noRun, verbose bool) error {
 	if writePath == "" && !showInfo && !doJump {
 		flag.Usage()
 		return fmt.Errorf("nothing to do: pass --write, --info or --jump")
@@ -230,13 +231,31 @@ func run(portName, writePath string, showInfo, doJump, verbose bool) error {
 		if err := writeImage(c, image, filepath.Base(writePath), inf); err != nil {
 			return err
 		}
+		// Run what was just written, the way every other Arduino board behaves
+		// after an upload. Without this the board sits in the bootloader,
+		// because the 1200 bps touch asked it to stay there.
+		doJump = doJump || !noRun
 	}
 	if doJump {
-		if _, err := c.call(cmdFwJump, nil, shortTimeout); err != nil {
+		if err := jumpToApp(c); err != nil {
 			return err
 		}
-		fmt.Println("jumped to the application")
 	}
+	return nil
+}
+
+// jumpToApp hands control to the application.
+//
+// The bootloader answers first and only then jumps, so a reply is expected -
+// but the USB device disappears the moment it does, and a host can lose the
+// reply in that window. A timeout here is not a failure: the jump was already
+// committed when the command was accepted.
+func jumpToApp(c *client) error {
+	if _, err := c.request(cmdFwJump, nil, shortTimeout); err != nil {
+		fmt.Println("running the sketch")
+		return nil
+	}
+	fmt.Println("running the sketch")
 	return nil
 }
 
@@ -260,9 +279,8 @@ func writeImage(c *client, image []byte, name string, inf *bootInfo) error {
 		return fmt.Errorf("FW_ERASE: %w", err)
 	}
 
-	start := time.Now()
+	prog := newProgress(len(image))
 	chunk := make([]byte, 4+maxWriteLen)
-	lastPct := -1
 	for off := 0; off < len(image); off += maxWriteLen {
 		n := maxWriteLen
 		if off+n > len(image) {
@@ -273,13 +291,9 @@ func writeImage(c *client, image []byte, name string, inf *bootInfo) error {
 		if _, err := c.call(cmdFwWrite, chunk[:4+n], writeTimeout); err != nil {
 			return fmt.Errorf("FW_WRITE at offset %d: %w", off, err)
 		}
-		if pct := (off + n) * 100 / len(image); pct != lastPct {
-			fmt.Printf("\r  %3d%%", pct)
-			lastPct = pct
-		}
+		prog.update(off + n)
 	}
-	elapsed := time.Since(start)
-	fmt.Printf("\r  done, %.1f KB/s\n", float64(len(image))/1024/elapsed.Seconds())
+	prog.done()
 
 	// FW_END computes the CRC over what was written and lays down the tag.
 	if _, err := c.call(cmdFwEnd, nil, verifyTimeout); err != nil {

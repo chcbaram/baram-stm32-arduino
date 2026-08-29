@@ -112,6 +112,11 @@ Two things about the upload plumbing are worth knowing if you add a board:
   the time the tool runs, the board has rebooted and come back under a different
   name, so `baramdl` treats `--port` as a hint and falls back to finding the
   bootloader itself.
+- **Carriage-return progress does not work in the IDE console.** It does not
+  interpret `\r` and holds a line until a newline arrives, so an in-place
+  progress bar arrives as one long burst after the upload has finished.
+  `baramdl` checks whether stdout is a terminal and prints a line per 10% when
+  it is not.
 
 USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
 
