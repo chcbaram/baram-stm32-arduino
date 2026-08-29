@@ -6,9 +6,15 @@
 // about 264 KB/s against 40 KB/s for HID on the same board, and it needs no
 // HID library, so this builds for every platform with plain `go build`.
 //
-//	baramdl --write app.bin          find the board, write, verify
-//	baramdl --info                   report what is connected
-//	baramdl --port /dev/cu.usbmodem1 pick the port explicitly
+//	baramdl --write app.bin           find the board, write, verify
+//	baramdl --info                    report what is connected
+//	baramdl --port /dev/cu.usbmodem1  pick the port explicitly
+//
+// It also produces and copies UF2 files, for the drag-and-drop path the
+// bootloader offers on its mass storage volume:
+//
+//	baramdl --uf2 app.bin app.uf2     convert
+//	baramdl --uf2-copy app.uf2        convert if needed, then copy to the drive
 package main
 
 import (
@@ -17,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -105,9 +112,31 @@ func main() {
 		write    = flag.String("write", "", "firmware .bin to write")
 		info     = flag.Bool("info", false, "report the connected board and exit")
 		jump     = flag.Bool("jump", false, "leave the bootloader and run the application")
+		uf2Out   = flag.String("uf2", "", "convert a .bin to UF2; pass the output path as the next argument")
+		uf2Copy  = flag.String("uf2-copy", "", "copy a .bin or .uf2 onto the bootloader's mass storage volume")
 		verbose  = flag.Bool("v", false, "verbose")
 	)
 	flag.Parse()
+
+	// UF2 work needs no serial port, so handle it before looking for a board.
+	if *uf2Out != "" {
+		out := flag.Arg(0)
+		if out == "" {
+			out = strings.TrimSuffix(*uf2Out, filepath.Ext(*uf2Out)) + ".uf2"
+		}
+		if err := writeUF2(*uf2Out, out); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *uf2Copy != "" {
+		if err := copyUF2(*uf2Copy); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if err := run(*portName, *write, *info, *jump, *verbose); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -270,4 +299,37 @@ func printVersion(v *versionInfo) {
 		fmt.Printf(", %d bytes, crc 0x%04X, %q %q", v.FwSize, v.FwCRC, v.Name, v.Version)
 	}
 	fmt.Println()
+}
+
+// copyUF2 drops a firmware image onto the bootloader's mass storage volume, the
+// same thing dragging the file onto the drive in a file manager does. A .bin is
+// converted on the way; a .uf2 is copied as is.
+func copyUF2(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(filepath.Ext(path), ".uf2") {
+		if data, err = binToUF2(data); err != nil {
+			return err
+		}
+	}
+
+	vol, err := findUF2Volume()
+	if err != nil {
+		return err
+	}
+	if vol == "" {
+		return fmt.Errorf("the %s drive is not mounted.\n"+
+			"Press reset twice quickly to bring it up, then try again", uf2VolumeLabel)
+	}
+
+	dest := filepath.Join(vol, "firmware.uf2")
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return err
+	}
+	// The bootloader reboots as soon as the last block lands, so the drive
+	// disappearing mid-write is success, not a failure.
+	fmt.Printf("copied %d blocks to %s\n", len(data)/uf2BlockSize, vol)
+	return nil
 }

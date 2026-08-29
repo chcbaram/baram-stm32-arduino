@@ -26,6 +26,11 @@ tools_bin_path.windows={runtime.tools.STM32Tools.path}/win
 tools_bin_path.macosx={runtime.tools.STM32Tools.path}/macosx
 tools_bin_path.linux={runtime.tools.STM32Tools.path}/linux
 
+baramdl_path={runtime.platform.path}/tools/baramdl
+baramdl_cmd=linux/baramdl
+baramdl_cmd.macosx=macosx/baramdl
+baramdl_cmd.windows=win/baramdl.exe
+
 core_stm32_dir={build.core.path}/stm32
 hal_dir={build.system.path}/Drivers/{build.series}_HAL_Driver
 cmsis_dir={runtime.tools.CMSIS-6.2.0.path}/CMSIS
@@ -181,6 +186,8 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 recipe.objcopy.bin.pattern="{compiler.path}{compiler.objcopy.cmd}" {compiler.elf2bin.flags} {compiler.elf2bin.extra_flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.bin"
 
 ## Create output (.hex file)
+recipe.hooks.objcopy.postobjcopy.1.pattern="{baramdl_path}/{baramdl_cmd}" --uf2 "{build.path}/{build.project_name}.bin" "{build.path}/{build.project_name}.uf2"
+
 recipe.objcopy.hex.pattern="{compiler.path}{compiler.elf2hex.cmd}" {compiler.elf2hex.flags} {compiler.elf2hex.extra_flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
 
 build.preferred_out_format=bin
@@ -227,13 +234,20 @@ tools.openocd_qspi.upload.pattern="{path}/{cmd}" {upload.verbose} -f interface/{
 # baramdl is a self-contained binary rather than a script: the Arduino IDE
 # bundles neither Python nor a JRE, and arduino-cli simply runs upload.pattern
 # as a subprocess.
-tools.baram_boot.path={runtime.platform.path}/tools/baramdl
-tools.baram_boot.cmd=linux/baramdl
-tools.baram_boot.cmd.macosx=macosx/baramdl
-tools.baram_boot.cmd.windows=win/baramdl.exe
+tools.baram_boot.path={baramdl_path}
+tools.baram_boot.cmd={baramdl_cmd}
 tools.baram_boot.upload.params.verbose=-v
 tools.baram_boot.upload.params.quiet=
 tools.baram_boot.upload.pattern="{path}/{cmd}" {upload.verbose} --port {serial.port} --write "{build.path}/{build.project_name}.bin"
+
+# Copy the .uf2 onto the bootloader's mass storage volume, which is the same
+# thing as dragging the file onto the drive. The volume only appears after a
+# reset double-tap, so unlike the CDC path this one is not automatic.
+tools.baram_uf2.path={baramdl_path}
+tools.baram_uf2.cmd={baramdl_cmd}
+tools.baram_uf2.upload.params.verbose=
+tools.baram_uf2.upload.params.quiet=
+tools.baram_uf2.upload.pattern="{path}/{cmd}" --uf2-copy "{build.path}/{build.project_name}.uf2"
 
 #
 # Bootloader burning

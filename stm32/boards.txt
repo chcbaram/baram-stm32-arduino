@@ -145,6 +145,13 @@ BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
 # Writes the application into the external QSPI flash over SWD using OpenOCD's
 # stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
 # peripheral registers directly and uploads a small SRAM stub for bulk writes.
+# Drag and drop, automated. The bootloader's mass storage volume only comes up
+# after a reset double-tap, so this cannot reset the board for you the way the
+# CDC method can - double-tap first, then upload. The .uf2 is built either way,
+# so it can also just be dragged onto the drive by hand.
+BARAM.menu.upload_method.uf2Method=UF2 mass storage (double-tap first)
+BARAM.menu.upload_method.uf2Method.upload.tool=baram_uf2
+
 BARAM.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
 BARAM.menu.upload_method.qspiMethod.upload.protocol=stlink
 BARAM.menu.upload_method.qspiMethod.upload.tool=openocd_qspi
@@ -216,6 +223,13 @@ HiGenis.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
 # Writes the application into the external QSPI flash over SWD using OpenOCD's
 # stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
 # peripheral registers directly and uploads a small SRAM stub for bulk writes.
+# Drag and drop, automated. The bootloader's mass storage volume only comes up
+# after a reset double-tap, so this cannot reset the board for you the way the
+# CDC method can - double-tap first, then upload. The .uf2 is built either way,
+# so it can also just be dragged onto the drive by hand.
+HiGenis.menu.upload_method.uf2Method=UF2 mass storage (double-tap first)
+HiGenis.menu.upload_method.uf2Method.upload.tool=baram_uf2
+
 HiGenis.menu.upload_method.qspiMethod=OpenOCD QSPI (SWD)
 HiGenis.menu.upload_method.qspiMethod.upload.protocol=stlink
 HiGenis.menu.upload_method.qspiMethod.upload.tool=openocd_qspi

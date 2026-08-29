@@ -85,8 +85,21 @@ sketch does.
 
 | Method | Needs | |
 |---|---|---|
-| Bootloader USB (CDC) | a USB cable | default |
+| Bootloader USB (CDC) | a USB cable | default, fully automatic |
+| UF2 mass storage | a reset double-tap | copies the `.uf2` onto the drive |
 | OpenOCD QSPI (SWD) | ST-LINK on PA13/PA14 | `debugger/weact_h750_qspi.cfg`, untested |
+
+Every build also produces a `.uf2` alongside the `.bin`, and *Sketch > Export
+Compiled Binary* puts it in the sketch's `build/` folder. Double-tap reset to
+bring up the `H750BOOT` drive and drag it across - no tools involved at all.
+
+The UF2 route cannot reset the board for you: the mass storage volume only
+appears on a double-tap, while the 1200 bps touch enters plain CDC mode. That is
+why the menu entry says so.
+
+The conversion is built into `baramdl` rather than vendored from Microsoft's
+`uf2conv.py`, because the Arduino IDE ships no Python and a post-build step that
+needs one would fail outright on Windows.
 
 USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
 
