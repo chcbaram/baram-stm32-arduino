@@ -209,6 +209,16 @@ WEAK void SystemClock_Config(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {};
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {};
 
+  /*
+   * D2 SRAM is where .non_cache lives - DMA buffers and framebuffers. Its clock
+   * comes up disabled out of reset and touching that memory while it is off
+   * faults. The bootloader already enables it before handing over; repeating it
+   * costs three register writes and removes the dependency.
+   */
+  __HAL_RCC_D2SRAM1_CLK_ENABLE();
+  __HAL_RCC_D2SRAM2_CLK_ENABLE();
+  __HAL_RCC_D2SRAM3_CLK_ENABLE();
+
   /* Supply configuration update enable */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 

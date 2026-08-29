@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| version | `V260830R2` |
+| version | `V260830R3` |
 | name | `WEACT-H750-BOOT` |
-| size | 99,760 bytes |
-| sha256 | `157178aafe47b77516c8a582a8028e75c61ce95b61ef4a6930f355a3cf1b28f5` |
+| size | 99,936 bytes |
+| sha256 | `d0faf7bf5b5dc643d4c023a806c24befc7e780c1bf9ef3a5a49c18b5aebaabf0` |
 
 Shipped as both `.bin` and `.hex`. The `.hex` carries its own load addresses,
 so it can be handed to a programmer without naming 0x08000000 separately.
@@ -34,6 +34,13 @@ python3 -c "d=open('weact_h750_mini.bin','rb').read(); print(d[0x404:0x424].spli
 - Leaves QUADSPI memory mapped with its kernel clock on D1HCLK, which is what
   lets the application change SYSCLK without stopping its own instruction
   fetch.
+
+It also refuses to jump after three *consecutive* fault resets, staying resident
+with mass storage up rather than looping on a broken image. Sketches need do
+nothing for this: the bootloader does not set VTOR before handing over, so its
+own fault handler is still installed through the window where a broken image
+dies. Writing a new image clears the counter, so an ordinary upload is the way
+back out.
 
 Reflashing it does not touch the QSPI flash, so the application and its tag
 survive - the board boots straight back into whatever sketch was there.

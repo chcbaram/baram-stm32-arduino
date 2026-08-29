@@ -28,8 +28,12 @@ const (
 	// another board from being written here.
 	uf2FamilyID = 0xFFFF0004
 
-	// UF2_MAX_FW_SIZE in the bootloader.
-	uf2MaxFwSize = 2 * 1024 * 1024
+	// UF2_MAX_FW_SIZE in the bootloader. It is not a hardware limit but what the
+	// hand-built FAT16 volume can hold: (32768 - 289 - 1) data clusters of 256
+	// bytes. A .uf2 is exactly twice the size of the image it carries, so the
+	// disk has to be twice as large as the largest sketch. That lands 70 KB
+	// short of the QSPI application area, which the CDC path is not subject to.
+	uf2MaxFwSize = (32768 - 289 - 1) * 256 // 8119 KB
 
 	// The FAT volume label the bootloader presents, used to find the drive.
 	uf2VolumeLabel = "H750BOOT"

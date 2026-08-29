@@ -150,6 +150,28 @@ SECTIONS
    * address of this one symbol is a single relocation and does work. */
   _fw_flash_size = _fw_flash_end - _fw_flash_begin;
 
+  /*
+   * Buffers that must not sit in cached memory - DMA targets, framebuffers.
+   * This has to be declared even if a sketch never uses it: an undeclared
+   * .non_cache becomes an orphan section, which the linker places after .data
+   * as LOADable, so it lands in the .bin past _fw_flash_end. The image then
+   * does not match the size firm_ver_t reports and the bootloader's CRC covers
+   * the wrong range, leaving it stuck at VER instead of promoting to TAG.
+   *
+   * NOLOAD because the contents are meaningless until written at run time.
+   * D2 SRAM is clocked by the bootloader before it hands over, and
+   * SystemClock_Config() enables it again in case that ever changes.
+   */
+  .non_cache (NOLOAD) :
+  {
+    . = ALIGN(32);
+    _snon_cache = .;
+    *(.non_cache)
+    *(.non_cache*)
+    . = ALIGN(32);
+    _enon_cache = .;
+  } >RAM_D2
+
   /* Uninitialized data section */
   . = ALIGN(4);
   .bss :

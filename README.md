@@ -138,11 +138,52 @@ The bootloader image ships in `stm32/bootloaders/`. Pick the method under
 - **ST-LINK (SWD)** — works no matter what is in flash, so this is the recovery
   path.
 
+### The WeActH750 library
+
+One object owns the on-board hardware, so a sketch can exercise the board
+without pulling anything else in:
+
+```cpp
+#include <WeActH750.h>
+
+void setup() {
+  board.begin(115200);
+}
+
+void loop() {
+  if (board.lcd.available()) {
+    board.lcd.clear(black);
+    board.lcd.printf(6, 4, white, "안녕하세요");         // UTF-8
+    board.lcd.printfResize(6, 30, green, 32.0f, "BIG"); // 32 px tall
+    board.lcd.update();
+  }
+  board.ledToggle();
+  if (board.keyPressed()) board.enterBootloader();
+  delay(50);
+}
+```
+
+The LCD driver, its fonts and the Korean composer are the bootloader's, copied
+in unchanged - `src/` is laid out as its include root so a file moved between
+the two projects needs no edits. Only `gpio.cpp` and `spi.cpp` are new: they put
+the bootloader's `gpioPinWrite()` and `spiXxx()` on the Arduino platform. A
+sketch therefore draws exactly what the bootloader's splash screen does.
+
+Korean is composed at draw time from initial, medial and final jamo rather than
+stored one bitmap per syllable - there are 11,172 of them - which fits the whole
+language in about 80 KB.
+
+Frames go out over DMA on SPI4, so the 5 ms a 160x80 frame takes on the wire is
+time the sketch can spend on the next one. `board.lcd.available()` is false
+until the previous frame has left.
+
+Examples: `BoardTest`, `LcdHelloWorld`, `LcdHangul`.
+
 ### Pinout
 
 ```
 LED          PE3    active HIGH
-Button K1    PC13
+Button K1    PC13   pressed reads HIGH; needs an internal pull-down
 Serial       PA9 TX / PA10 RX   (LPUART1; the bootloader uses USART1 on the same pins)
 USB OTG_FS   PA11 DM / PA12 DP  (VBUS is not wired to the MCU)
 QSPI         PB2 CLK, PB6 NCS, PD11 IO0, PD12 IO1, PE2 IO2, PD13 IO3
