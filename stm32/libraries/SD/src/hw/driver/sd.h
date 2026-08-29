@@ -44,6 +44,9 @@ bool sdIsBusy(void);
 bool sdIsDetected(void);
 bool sdGetInfo(sd_info_t *p_info);
 
+// Last HAL_SD_ERROR_* from the driver, for reporting why sdInit() failed.
+uint32_t sdGetLastError(void);
+
 
 #endif /* _USE_HW_LED */
 

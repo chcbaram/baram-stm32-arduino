@@ -348,6 +348,11 @@ bool sdGetInfo(sd_info_t *p_info)
   return ret;
 }
 
+uint32_t sdGetLastError(void)
+{
+  return uSdHandle.ErrorCode;
+}
+
 void HAL_SD_AbortCallback(SD_HandleTypeDef *hsd)
 {
   (void)hsd;
