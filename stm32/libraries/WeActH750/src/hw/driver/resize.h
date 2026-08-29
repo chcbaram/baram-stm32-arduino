@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 
-#include "hw_def.h"
+#include "hw/hw_def.h"
 
 typedef struct
 {

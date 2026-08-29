@@ -6,10 +6,10 @@
  */
 
 
-#include "spi.h"
-#include "gpio.h"
-#include "lcd/st7735.h"
-#include "lcd/st7735_regs.h"
+#include "hw/driver/spi.h"
+#include "hw/driver/gpio.h"
+#include "hw/driver/lcd/st7735.h"
+#include "hw/driver/lcd/st7735_regs.h"
 
 
 

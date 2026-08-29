@@ -7,8 +7,8 @@
 
 
 
-#include "han.h"
-#include "hangul/font_eng.h"
+#include "hw/driver/hangul/han.h"
+#include "hw/driver/hangul/font_eng.h"
 
 /*
  * HW_LCD_HANGUL 로 한글 글리프 테이블을 뺄 수 있게 했다.
@@ -23,7 +23,7 @@
 #endif
 
 #if HW_LCD_HANGUL > 0
-#include "hangul/font_han.h"
+#include "hw/driver/hangul/font_han.h"
 #endif
 
 

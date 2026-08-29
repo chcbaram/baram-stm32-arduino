@@ -6,18 +6,18 @@
  */
 
 
-#include "lcd.h"
-#include "gpio.h"
+#include "hw/driver/lcd.h"
+#include "hw/driver/gpio.h"
 
 
 #ifdef _USE_HW_LCD
 
-#include "hangul/han.h"
-#include "lcd/lcd_fonts.h"
-#include "resize.h"
+#include "hw/driver/hangul/han.h"
+#include "hw/driver/lcd/lcd_fonts.h"
+#include "hw/driver/resize.h"
 
 #ifdef _USE_HW_ST7735
-#include "lcd/st7735.h"
+#include "hw/driver/lcd/st7735.h"
 #endif
 #ifdef _USE_HW_SSD1306
 

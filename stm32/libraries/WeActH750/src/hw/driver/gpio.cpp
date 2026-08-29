@@ -7,8 +7,8 @@
 #include <Arduino.h>
 
 extern "C" {
-#include "hw_def.h"
-#include "gpio.h"
+#include "hw/hw_def.h"
+#include "hw/driver/gpio.h"
 }
 
 /*

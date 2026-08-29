@@ -31,7 +31,7 @@
 #include <Arduino.h>
 
 extern "C" {
-#include "spi.h"
+#include "hw/driver/spi.h"
 }
 
 // SPI4 on this board: PE12 SCK, PE14 MOSI. No MISO, no hardware NSS - chip

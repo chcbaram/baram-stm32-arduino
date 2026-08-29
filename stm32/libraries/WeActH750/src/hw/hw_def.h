@@ -3,11 +3,10 @@
 /*
  * Board definitions: what is on this board and where.
  *
- * This is the file to edit for a different board - pin names, panel size, panel
- * model - and it is deliberately kept out of port/, which holds only the
- * adapters between the bootloader's drivers and the Arduino platform. The name
- * matches the bootloader's own hw_def.h so that a driver copied across keeps
- * including the same thing.
+ * This is the file to edit for a different board: pin names, panel size, panel
+ * model. src/ is laid out the way the bootloader's source tree is - hw/hw_def.h
+ * for the board, hw/driver/ for what runs on it - so a file moved between the
+ * two projects only needs its include prefix adjusted.
  *
  * The driver, its fonts and the Hangul composer are used unmodified - that is
  * the point of this shim. Only the layer below them is different, so a sketch

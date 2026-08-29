@@ -6,7 +6,7 @@
  */
 
 
-#include "lcd/lcd_fonts.h"
+#include "hw/driver/lcd/lcd_fonts.h"
 
 static const uint16_t Font7x10 [] = {
 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,  // sp

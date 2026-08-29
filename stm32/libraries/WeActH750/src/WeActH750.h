@@ -37,7 +37,7 @@
 #include <Arduino.h>
 
 extern "C" {
-#include "lcd.h"
+#include "hw/driver/lcd.h"
 }
 
 #define WEACT_H750_VER_STR   "WEACT-H750 V260830R1"

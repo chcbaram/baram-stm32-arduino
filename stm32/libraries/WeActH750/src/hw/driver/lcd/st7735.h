@@ -8,13 +8,13 @@
 #ifndef SRC_COMMON_HW_INCLUDE_LCD_ST7735_H_
 #define SRC_COMMON_HW_INCLUDE_LCD_ST7735_H_
 
-#include "hw_def.h"
+#include "hw/hw_def.h"
 
 
 #ifdef _USE_HW_ST7735
 
-#include "lcd.h"
-#include "st7735_regs.h"
+#include "hw/driver/lcd.h"
+#include "hw/driver/lcd/st7735_regs.h"
 
 
 

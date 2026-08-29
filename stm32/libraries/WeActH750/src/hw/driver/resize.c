@@ -8,7 +8,7 @@
 
 
 
-#include "resize.h"
+#include "hw/driver/resize.h"
 #include <math.h>
 
 
