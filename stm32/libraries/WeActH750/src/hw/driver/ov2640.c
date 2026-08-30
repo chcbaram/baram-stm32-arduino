@@ -50,7 +50,17 @@ static const uint8_t allowed_sizes[OV2640_NUM_ALLOWED_SIZES] = {
 static const uint8_t rgb565_regs[][2] = {
     { BANK_SEL, BANK_SEL_DSP },
     { REG_RESET,   REG_RESET_DVP},
-    { IMAGE_MODE, IMAGE_MODE_RGB565 },
+    /*
+     * RGB565, low byte first.
+     *
+     * The sensor sends a pixel's high byte first by default, and the DCMI packs
+     * arriving bytes into words little end first, so each 16 bit pixel lands
+     * with its halves the wrong way round - the picture is right but the
+     * colours are not. LBYTE_FIRST makes the sensor emit the low byte first,
+     * which cancels out. Doing it here costs nothing; swapping in software
+     * would cost a byte swap on every pixel of every frame.
+     */
+    { IMAGE_MODE, IMAGE_MODE_RGB565 | IMAGE_MODE_LBYTE_FIRST },
     { 0xD7,     0x03 },
     { 0xE1,     0x77 },
     { REG_RESET,    0x00 },
@@ -608,7 +618,22 @@ static int ov2640_reset(camera_t *sensor)
   ov2640_clkrc_before = OV2640_RD_Reg(CLKRC);
   OV2640_WR_Reg(CLKRC, ov2640_clkrc_before & (uint8_t)~CLKRC_DOUBLE);
   ov2640_clkrc_after = OV2640_RD_Reg(CLKRC);
+
+  /*
+   * Hand exposure, gain and white balance to the sensor.
+   *
+   * Without these it holds whatever exposure the register table left behind,
+   * and anything but that one lighting level comes out flat: every pixel within
+   * a few counts of the same value, which reads as a blank screen rather than
+   * as a badly exposed picture. The maintained drivers turn all three on at the
+   * end of bring-up; this file was ported without that step.
+   *
+   * COM8 is in the sensor bank, CTRL1 in the DSP bank, hence the switch.
+   */
+  OV2640_WR_Reg(COM8, OV2640_RD_Reg(COM8) | COM8_AEC_EN | COM8_AGC_EN | COM8_BNDF_EN);
+
   OV2640_WR_Reg(BANK_SEL, BANK_SEL_DSP);
+  OV2640_WR_Reg(CTRL1, OV2640_RD_Reg(CTRL1) | CTRL1_AWB);
 
   return 0;
 }

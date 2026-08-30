@@ -31,6 +31,12 @@ static uint16_t cam_buf[HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT]
 
 static bool cam_ok = false;
 
+// Loop and draw counters, readable from a debugger. Telling "the sketch is
+// stuck" apart from "the sketch runs but the panel never accepts a frame" is
+// otherwise guesswork.
+uint32_t dbg_loop_cnt = 0;
+uint32_t dbg_draw_cnt = 0;
+
 /*
  * Where in the buffer to read, and how long a row really is.
  *
@@ -178,9 +184,16 @@ void setup()
     // Bring-up aid: set to 1 to have the sensor emit its colour bar instead of
     // a picture, which separates a bad capture path from a bad sensor setup.
 
-    // Bring-up aid: the sensor's own colour bar. Enabled before the registers
-    // are read back, so the report shows whether it actually took.
-    cameraSetColorbar(1);
+    /*
+     * The sensor's own colour bar, for bring-up.
+     *
+     * Set to 1 and the sensor emits a known pattern instead of a picture: bars
+     * on the panel mean the capture, the pixel format and the display are all
+     * working, and anything still wrong is the lens, the exposure or the
+     * sensor's own configuration. It is the fastest way to split those two
+     * halves apart, so it stays here.
+     */
+    cameraSetColorbar(0);
 
     /*
      * What the sensor is actually set to, read back rather than assumed.
@@ -221,8 +234,11 @@ void setup()
 
 void loop()
 {
+  dbg_loop_cnt++;
+
   if (board.lcd.available())
   {
+    dbg_draw_cnt++;
     if (cam_ok) {
       /*
        * Straight copy, no scaling.
