@@ -482,6 +482,25 @@ void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err)
  * exposure or the sensor's own configuration. A buffer that still looks like
  * rubbish says the capture path itself is wrong.
  */
+/*
+ * Orientation, done in the sensor.
+ *
+ * camera.h declares these but the file was ported without them, so a caller got
+ * a link error rather than a picture. Doing it in the sensor rather than while
+ * copying costs nothing per frame.
+ */
+int cameraSetHmirror(int enable)
+{
+  if (is_init != true || sensor.set_hmirror == NULL) return -1;
+  return sensor.set_hmirror(&sensor, enable);
+}
+
+int cameraSetVflip(int enable)
+{
+  if (is_init != true || sensor.set_vflip == NULL) return -1;
+  return sensor.set_vflip(&sensor, enable);
+}
+
 int cameraSetColorbar(int enable)
 {
   if (is_init != true || sensor.set_colorbar == NULL) return -1;

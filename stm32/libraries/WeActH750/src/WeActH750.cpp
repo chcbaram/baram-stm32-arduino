@@ -77,6 +77,113 @@ void WeActH750::enterBootloader(bool massStorage)
   rebootToBootloader(massStorage);
 }
 
+/*
+ * The camera's frame buffer.
+ *
+ * In .non_cache, which the linker places in D2 SRAM and the bootloader's MPU
+ * maps non-cacheable and 32 byte aligned. That is the reason it lives here
+ * rather than in the sketch: the DCMI writes into it by DMA, and a buffer
+ * anywhere cacheable would need cleaning and invalidating around every frame.
+ *
+ * One buffer, not two. QVGA RGB565 is 150 KB and the panel's own frame buffer
+ * takes another 25 KB of D2's 288 KB, so a second frame would not fit - and a
+ * mixed placement, one here and one in AXI SRAM, would give the two different
+ * cache behaviour and put a branch in the capture path for no good reason.
+ */
+static uint16_t __attribute__((section(".non_cache"), aligned(32)))
+  cam_frame[HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT];
+
+bool WeActCamera::begin(framesize_t size)
+{
+  int32_t w = 0, h = 0;
+
+  if (running) return true;
+
+  if (!cameraInit()) return false;
+
+  if (cameraSetFramesize(size) != 0) return false;
+
+  /*
+   * Check the frame fits before arming anything.
+   *
+   * cameraSetFramesize() refuses a size the sensor does not support and leaves
+   * it at the previous one, so the size that matters is the one read back, not
+   * the one asked for. Starting a capture larger than the buffer would have the
+   * DMA write past the end of it, into whatever .non_cache holds next - which
+   * on this board is the panel's own frame buffer.
+   */
+  if (!cameraGetResolution(&w, &h)) return false;
+  if ((uint32_t)(w * h) > (uint32_t)(HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT)) return false;
+
+  // Continuous: the sensor keeps refilling the same buffer on its own, so
+  // nothing has to re-arm a transfer per frame.
+  running = cameraStart((uint8_t *)cam_frame, CAMERA_MODE_CONTINUOUS);
+  return running;
+}
+
+bool WeActCamera::available(void)
+{
+  return running && cameraIsAvailble();
+}
+
+uint16_t *WeActCamera::frameBuffer(void)
+{
+  return cam_frame;
+}
+
+int32_t WeActCamera::width(void)
+{
+  int32_t w = HW_CAMERA_WIDTH;
+  cameraGetResolution(&w, NULL);
+  return w;
+}
+
+int32_t WeActCamera::height(void)
+{
+  int32_t h = HW_CAMERA_HEIGHT;
+  cameraGetResolution(NULL, &h);
+  return h;
+}
+
+void WeActCamera::drawTo(WeActLcd &lcd)
+{
+  const int32_t lw = lcd.width();
+  const int32_t lh = lcd.height();
+  const int32_t cw = width();
+  const int32_t ch = height();
+
+  uint16_t *dst = lcd.frameBuffer();
+  if (dst == NULL || !running) return;
+
+  // Centre the panel's window in the frame, clamped so a frame smaller than the
+  // panel still copies what there is instead of reading past the buffer.
+  const int32_t cols = (cw < lw) ? cw : lw;
+  const int32_t rows = (ch < lh) ? ch : lh;
+  const int32_t x0   = (cw - cols) / 2;
+  const int32_t y0   = (ch - rows) / 2;
+
+  for (int32_t y = 0; y < rows; y++) {
+    const uint16_t *srow = &cam_frame[(y + y0) * cw + x0];
+    uint16_t       *drow = &dst[y * lw];
+    for (int32_t x = 0; x < cols; x++) drow[x] = srow[x];
+  }
+}
+
+void WeActCamera::mirror(bool enable)
+{
+  cameraSetHmirror(enable ? 1 : 0);
+}
+
+void WeActCamera::flip(bool enable)
+{
+  cameraSetVflip(enable ? 1 : 0);
+}
+
+void WeActCamera::colorBar(bool enable)
+{
+  cameraSetColorbar(enable ? 1 : 0);
+}
+
 void WeActLcd::printf(int x, int y, uint16_t color, const char *fmt, ...)
 {
   char buf[256];

@@ -43,6 +43,7 @@
 
 extern "C" {
 #include "hw/driver/lcd.h"
+#include "hw/driver/camera.h"
 }
 
 #define WEACT_H750_VER_STR   "WEACT-H750 V260830R1"
@@ -108,12 +109,103 @@ public:
   uint16_t *frameBuffer(void)              { return lcdGetFrameBuffer(); }
 };
 
+/*
+ * The DVP camera on the board's camera header.
+ *
+ * begin() brings the sensor up and starts it capturing continuously into a
+ * frame buffer this class owns, so a sketch never has to place one itself -
+ * that placement matters more than it looks. The buffer lives in D2 SRAM
+ * through the .non_cache section, which the MPU maps non-cacheable, and that
+ * is what lets the capture run with no cache maintenance around the DMA.
+ *
+ * Pixels are RGB565, the same format the panel takes, so drawTo() is a copy
+ * rather than a conversion.
+ *
+ * A sketch that never touches board.cam pays nothing for it. The frame buffer
+ * is a file scope object in WeActH750.cpp reached only from these methods, and
+ * the core compiles with -ffunction-sections -fdata-sections and links with
+ * --gc-sections, so an uncalled begin() takes its buffer with it: the LCD-only
+ * examples come out with 25 KB of .non_cache rather than 175 KB. That holds
+ * only while nothing outside these methods refers to the buffer - reaching it
+ * from a constructor, or from anything that runs whether or not the camera is
+ * used, would anchor all 150 KB into every sketch.
+ *
+ *   void setup() {
+ *     board.begin(115200);
+ *     board.cam.begin();
+ *   }
+ *
+ *   void loop() {
+ *     if (board.lcd.available()) {
+ *       board.cam.drawTo(board.lcd);
+ *       board.lcd.update();
+ *     }
+ *   }
+ */
+class WeActCamera
+{
+public:
+  /*
+   * Finds the sensor, configures it for one frame size and starts capturing.
+   * False means nothing answered on the camera header's SCCB bus, or that the
+   * size asked for does not fit the frame buffer.
+   *
+   * The buffer is sized once, at compile time, for HW_CAMERA_WIDTH x
+   * HW_CAMERA_HEIGHT in hw_def.h - that is the largest frame this board will
+   * capture. A smaller size simply uses part of it, so QQVGA costs the same
+   * memory as QVGA; raising the ceiling means editing hw_def.h.
+   *
+   *   board.cam.begin()                     the board's default size
+   *   board.cam.begin(FRAMESIZE_QQVGA)      160x120, a quarter of the data
+   */
+  bool begin(framesize_t size = HW_CAMERA_FRAMESIZE);
+
+  // True once capture is running.
+  bool isRunning(void)                     { return running; }
+
+  // True when a frame has completed since the last time this was asked.
+  bool available(void);
+
+  // The most recent frame. RGB565, width() x height().
+  uint16_t *frameBuffer(void);
+  int32_t width(void);
+  int32_t height(void);
+
+  /*
+   * Copies the middle of the frame onto the panel, one sensor pixel to one
+   * panel pixel.
+   *
+   * No scaling: the sensor is 4:3 and the panel is 2:1, so a scaled frame would
+   * be squashed, and a wrong assumption about the frame's line length would
+   * show up as noise rather than as something recognisably shifted. Taking the
+   * middle keeps circles round and keeps the failure mode readable.
+   */
+  void drawTo(WeActLcd &lcd);
+
+  // Left-right and top-bottom, done in the sensor rather than in the copy.
+  void mirror(bool enable);
+  void flip(bool enable);
+
+  /*
+   * The sensor's own colour bar.
+   *
+   * Bring-up aid: bars on the panel mean the capture, the pixel format and the
+   * display are all working, so anything still wrong is the lens, the exposure
+   * or the sensor's configuration. It is the fastest way to split those apart.
+   */
+  void colorBar(bool enable);
+
+private:
+  bool running = false;
+};
+
 class SDClass;
 
 class WeActH750
 {
 public:
   WeActLcd lcd;
+  WeActCamera cam;
 
   /*
    * The microSD socket, through the SD library's global - a reference, so
