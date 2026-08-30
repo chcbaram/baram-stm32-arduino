@@ -108,6 +108,30 @@ extern "C" bool spiBegin(uint8_t ch)
   if (HAL_DMA_Init(&hdma_tx) != HAL_OK) return false;
   __HAL_LINKDMA(&hspi, hdmatx, hdma_tx);
 
+  /*
+   * Silence what the previous owner left standing, before opening the lines.
+   *
+   * The bootloader hands over with a bl, not a reset. It draws its jump screen
+   * over this same SPI4 and DMA1 stream, and bspDeInit() masks the NVIC without
+   * resetting either peripheral - so SPI4 arrives with its IER bits and status
+   * flags still set. HAL_SPI_Init() does not touch IER or IFCR (checked), so
+   * they survive everything above.
+   *
+   * Enable the NVIC line on top of that and the stale flag raises an interrupt
+   * at once, entering HAL_SPI_IRQHandler() for a transfer that finished under a
+   * different owner. HAL_DMA_Init() already clears the stream's own flags,
+   * which is why the DMA side is quiet; the SPI side has nothing doing that.
+   *
+   * camera.c's DCMI_MspInit carries the same note for DMA1 - the mechanism is
+   * the board's, not any one peripheral's.
+   */
+  __HAL_SPI_DISABLE(&hspi);
+  hspi.Instance->IER  = 0;
+  hspi.Instance->IFCR = 0xFFFFFFFFUL;   // write 1 to clear, every flag
+
+  HAL_NVIC_ClearPendingIRQ(LCD_DMA_IRQn);
+  HAL_NVIC_ClearPendingIRQ(LCD_SPI_IRQn);
+
   // Below the systick priority so millis() keeps ticking through a frame.
   HAL_NVIC_SetPriority(LCD_DMA_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(LCD_DMA_IRQn);
