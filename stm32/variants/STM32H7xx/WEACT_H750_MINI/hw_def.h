@@ -53,8 +53,11 @@ extern "C" {
 #define _USE_HW_LCD
 #define _USE_HW_ST7735
 
-// microSD on SDMMC1, 4 bit wide.
+// microSD on SDMMC1, 4 bit wide. _USE_HW_SD turns the card layer on and
+// _USE_HW_SDMMC picks which back end drives it, the same way _USE_HW_LCD and
+// _USE_HW_ST7735 pair up above.
 #define _USE_HW_SD
+#define _USE_HW_SDMMC
 
 /*
  * Which SDMMC block and which pins. The driver reads these rather than naming

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| version | `V260830R3` |
+| version | `V260830R4` |
 | name | `WEACT-H750-BOOT` |
-| size | 99,936 bytes |
-| sha256 | `d0faf7bf5b5dc643d4c023a806c24befc7e780c1bf9ef3a5a49c18b5aebaabf0` |
+| size | 99,960 bytes |
+| sha256 | `4cd5a017257a36b346a757cad893077e9afda31bbc3668514e604682da14fe1f` |
 
 Shipped as both `.bin` and `.hex`. The `.hex` carries its own load addresses,
 so it can be handed to a programmer without naming 0x08000000 separately.
@@ -34,6 +34,12 @@ python3 -c "d=open('weact_h750_mini.bin','rb').read(); print(d[0x404:0x424].spli
 - Leaves QUADSPI memory mapped with its kernel clock on D1HCLK, which is what
   lets the application change SYSCLK without stopping its own instruction
   fetch.
+- Sets up the MPU, which the application then inherits - the Arduino core has no
+  MPU code of its own. AXI SRAM at `0x24000000` is write-through cacheable and
+  execute-never; D2 SRAM at `0x30000000` is non-cacheable, which is what makes
+  the `.non_cache` section safe to hand to DMA without maintenance. Both regions
+  are read straight off the running target rather than taken on trust; the
+  values are in the cache note in the SD driver.
 
 It also refuses to jump after three *consecutive* fault resets, staying resident
 with mass storage up rather than looping on a broken image. Sketches need do
