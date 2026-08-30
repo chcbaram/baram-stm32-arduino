@@ -1,13 +1,14 @@
 /*
- * led.c
+ * sd.c
  *
- *  Created on: 2017. 2. 13.
- *      Author: baram
+ * microSD over SDMMC, 4 bit wide, through the SDMMC block's own DMA.
+ *
+ * Which block and which pins come from hw_def.h, so a board that wires the
+ * socket differently only edits that file.
+ *
+ * Functions are laid out init first, then the interface, then what is only used
+ * in here.
  */
-
-
-
-
 
 #include "hw/driver/sd.h"
 
@@ -17,6 +18,12 @@
  * line - HW_SD_DETECT_NONE in hw_def.h - so nothing is needed here. A board
  * that has one includes its own GPIO header. */
 
+#define CACHE_LINE          32
+#define IS_LINE_ALIGNED(a)  ((((uint32_t)(a)) & (CACHE_LINE - 1)) == 0)
+
+#ifndef HW_SD_BOUNCE_SECTORS
+#define HW_SD_BOUNCE_SECTORS  8
+#endif
 
 
 //-- Internal Variables
@@ -24,86 +31,35 @@
 static bool is_init = false;
 static volatile bool is_rx_done = false;
 static volatile bool is_tx_done = false;
+static volatile bool is_error   = false;
 
-/*
- * Cache maintenance around DMA.
- *
- * The core turns the D-cache on, and the SDMMC's internal DMA writes straight
- * to memory. Without invalidating after a read the CPU keeps serving stale
- * cache lines; without cleaning before a write the card gets stale memory.
- *
- * The cache operates on whole 32-byte lines, so the range must never be widened
- * to cover data that is not part of the transfer. Invalidating discards a dirty
- * line instead of writing it back, so widening throws away whatever a neighbour
- * had just written. That is not theoretical here: FatFs hands over its 512-byte
- * window, which sits immediately before the SDMMC handle in .bss, and widening
- * the tail to a line boundary discarded the handle's Instance and Init fields
- * that sdInit() had written moments earlier - leaving Instance NULL from the
- * first read onwards.
- *
- * So the range is never widened. A buffer that is already line aligned is used
- * for DMA directly; anything else goes through a bounce buffer that is aligned
- * by construction, one sector at a time. Transfers are always whole 512-byte
- * sectors, so only the start address can be misaligned.
- */
-#define CACHE_LINE      32
-#define IS_LINE_ALIGNED(a)  ((((uint32_t)(a)) & (CACHE_LINE - 1)) == 0)
-
-static uint8_t sd_bounce[BLOCKSIZE] __attribute__((aligned(CACHE_LINE)));
-
-static void cacheClean(const void *addr, uint32_t size)
-{
-  SCB_CleanDCache_by_Addr((uint32_t *)addr, (int32_t)size);
-}
-
-static void cacheInvalidate(const void *addr, uint32_t size)
-{
-  SCB_InvalidateDCache_by_Addr((uint32_t *)addr, (int32_t)size);
-}
-
-// Waits for a DMA completion flag, then for the card to leave its busy state.
-static bool sdWaitDone(volatile bool *p_done, uint32_t timeout_ms)
-{
-  uint32_t pre_time = millis();
-
-  while (*p_done == false)
-  {
-    if (millis() - pre_time >= timeout_ms) return false;
-  }
-  while (sdIsBusy() == true)
-  {
-    if (millis() - pre_time >= timeout_ms) return false;
-  }
-  return true;
-}
 // Aligned so the handle never shares a cache line with whatever precedes it in
 // .bss. Nothing widens a cache range any more, but this handle sat directly
 // behind FatFs's sector window and a single line-rounded invalidate wiped its
 // Instance field. Cheap insurance against that ever coming back.
 static SD_HandleTypeDef uSdHandle __attribute__((aligned(32)));
 
-
-
-
-//-- External Variables
-//
+static uint8_t sd_bounce[HW_SD_BOUNCE_SECTORS * BLOCKSIZE] __attribute__((aligned(CACHE_LINE)));
 
 
 //-- Internal Functions
 //
+static void cacheClean(const void *addr, uint32_t size);
+static void cacheInvalidate(const void *addr, uint32_t size);
+static bool sdWaitDone(volatile bool *p_done, uint32_t timeout_ms);
+static bool sdFail(void);
+static bool sdReadDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
+static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
+
 #if HW_SD_USE_CMDIF == 1
 void sdCmdifInit(void);
 void sdCmdif(void);
 #endif
 
-//static void sdInitHw(void);
 
 
-//-- External Functions
+//-- Initialisation
 //
-
-
-
 
 bool sdInit(void)
 {
@@ -117,7 +73,7 @@ bool sdInit(void)
   uSdHandle.Init.ClockEdge           = SDMMC_CLOCK_EDGE_RISING;
   uSdHandle.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
   uSdHandle.Init.BusWide             = SDMMC_BUS_WIDE_4B;
-  uSdHandle.Init.ClockDiv            = SDMMC_HSpeed_CLK_DIV;
+  uSdHandle.Init.ClockDiv            = HW_SD_CLK_DIV;
 
 
 
@@ -181,30 +137,8 @@ bool sdDeInit(void)
 }
 
 
-// One DMA transfer straight into the caller's buffer. The buffer must be cache
-// line aligned; sdReadBlocks() is what guarantees that.
-static bool sdReadDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
-{
-  uint32_t size = num_of_blocks * BLOCKSIZE;
-
-  // Drop any dirty lines first. If one were evicted while the DMA is running it
-  // would land on top of what the card just delivered.
-  cacheInvalidate(p_data, size);
-
-  is_rx_done = false;
-
-  if (HAL_SD_ReadBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
-  {
-    return false;
-  }
-  if (sdWaitDone(&is_rx_done, timeout_ms) == false)
-  {
-    return false;
-  }
-
-  cacheInvalidate(p_data, size);
-  return true;
-}
+//-- External Functions
+//
 
 bool sdReadBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
 {
@@ -215,30 +149,21 @@ bool sdReadBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, 
     return sdReadDirect(block_addr, p_data, num_of_blocks, timeout_ms);
   }
 
-  // Misaligned caller buffer: one sector at a time through the bounce buffer.
-  for (uint32_t i = 0; i < num_of_blocks; i++)
+  // Misaligned caller buffer: through the bounce buffer, as many sectors per
+  // transfer as it holds.
+  for (uint32_t done = 0; done < num_of_blocks; )
   {
-    if (sdReadDirect(block_addr + i, sd_bounce, 1, timeout_ms) == false)
+    uint32_t n = num_of_blocks - done;
+    if (n > HW_SD_BOUNCE_SECTORS) n = HW_SD_BOUNCE_SECTORS;
+
+    if (sdReadDirect(block_addr + done, sd_bounce, n, timeout_ms) == false)
     {
       return false;
     }
-    memcpy(&p_data[i * BLOCKSIZE], sd_bounce, BLOCKSIZE);
+    memcpy(&p_data[done * BLOCKSIZE], sd_bounce, n * BLOCKSIZE);
+    done += n;
   }
   return true;
-}
-
-static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
-{
-  // Push the data out of the cache before the DMA reads it.
-  cacheClean(p_data, num_of_blocks * BLOCKSIZE);
-
-  is_tx_done = false;
-
-  if (HAL_SD_WriteBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
-  {
-    return false;
-  }
-  return sdWaitDone(&is_tx_done, timeout_ms);
 }
 
 bool sdWriteBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
@@ -250,13 +175,17 @@ bool sdWriteBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks,
     return sdWriteDirect(block_addr, p_data, num_of_blocks, timeout_ms);
   }
 
-  for (uint32_t i = 0; i < num_of_blocks; i++)
+  for (uint32_t done = 0; done < num_of_blocks; )
   {
-    memcpy(sd_bounce, &p_data[i * BLOCKSIZE], BLOCKSIZE);
-    if (sdWriteDirect(block_addr + i, sd_bounce, 1, timeout_ms) == false)
+    uint32_t n = num_of_blocks - done;
+    if (n > HW_SD_BOUNCE_SECTORS) n = HW_SD_BOUNCE_SECTORS;
+
+    memcpy(sd_bounce, &p_data[done * BLOCKSIZE], n * BLOCKSIZE);
+    if (sdWriteDirect(block_addr + done, sd_bounce, n, timeout_ms) == false)
     {
       return false;
     }
+    done += n;
   }
   return true;
 }
@@ -357,9 +286,19 @@ uint32_t sdGetLastError(void)
   return uSdHandle.ErrorCode;
 }
 
+
+//-- Entry points the HAL and the vector table call
+//
+
 void HAL_SD_AbortCallback(SD_HandleTypeDef *hsd)
 {
   (void)hsd;
+}
+
+void HAL_SD_ErrorCallback(SD_HandleTypeDef *hsd)
+{
+  (void)hsd;
+  is_error = true;
 }
 
 void HAL_SD_TxCpltCallback(SD_HandleTypeDef *hsd)
@@ -433,6 +372,131 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
 }
 
 
+//-- Internal Functions
+//
+
+/*
+ * Cache maintenance around DMA.
+ *
+ * The core turns the D-cache on, and the SDMMC's internal DMA writes straight
+ * to memory. Without invalidating after a read the CPU keeps serving stale
+ * cache lines; without cleaning before a write the card gets stale memory.
+ *
+ * The unit is a whole 32-byte line and there is no way around that. CMSIS
+ * rounds to lines itself - SCB_InvalidateDCache_by_Addr adds the misalignment
+ * to the length and walks from the unaligned address, so DCIMVAC lands on the
+ * line containing it either way. Passing an exact range buys nothing.
+ *
+ * That matters because invalidating discards a dirty line rather than writing
+ * it back. Any neighbour sharing a line with the buffer loses whatever it had
+ * just written. It happened here: FatFs's 512-byte window sat directly in front
+ * of the SDMMC handle, so invalidating after a read threw away the handle's
+ * Instance and Init fields that sdInit() had set moments earlier, and every
+ * later HAL call went through a NULL Instance.
+ *
+ * So the buffer handed to DMA must not share a line with anything else. A
+ * caller's buffer that is already line aligned is used directly; anything else
+ * goes through a bounce buffer that is aligned by construction. Transfers are
+ * always whole 512-byte sectors, so only the start address can be misaligned.
+ * uSdHandle and the FATFS object are aligned too, which keeps them out of a
+ * shared line no matter what a future caller does.
+ *
+ * The bounce buffer holds several sectors because the cost of the detour is not
+ * the copy, it is losing the multi-block transfer: one sector per transaction
+ * measured ten times slower on writes than one transaction for sixteen. At
+ * eight sectors the misaligned path stays within reach of the direct one.
+ */
+static void cacheClean(const void *addr, uint32_t size)
+{
+  SCB_CleanDCache_by_Addr((uint32_t *)addr, (int32_t)size);
+}
+
+static void cacheInvalidate(const void *addr, uint32_t size)
+{
+  SCB_InvalidateDCache_by_Addr((uint32_t *)addr, (int32_t)size);
+}
+
+/*
+ * Waits for a DMA completion flag, then for the card to leave its busy state.
+ *
+ * The error flag matters as much as the timeout. When a transfer fails the HAL
+ * signals it through HAL_SD_ErrorCallback and never raises the completion flag,
+ * so without watching for it this would sit out the whole timeout on every
+ * failure - seconds at a time, per sector.
+ */
+static bool sdWaitDone(volatile bool *p_done, uint32_t timeout_ms)
+{
+  uint32_t pre_time = millis();
+
+  while (*p_done == false)
+  {
+    if (is_error) return false;
+    if (millis() - pre_time >= timeout_ms) return false;
+  }
+  while (sdIsBusy() == true)
+  {
+    if (millis() - pre_time >= timeout_ms) return false;
+  }
+  return true;
+}
+
+/*
+ * Gives up on a transfer that did not finish.
+ *
+ * This has to abort, not just return. The transfer is still armed, and the
+ * caller is about to let go of the buffer - FatFs hands over its own window or
+ * a file object that may live on the stack. A transfer left running writes into
+ * memory that has since been reused, which shows up much later as a wild branch
+ * with nothing to connect it back to the SD driver.
+ */
+static bool sdFail(void)
+{
+  HAL_SD_Abort(&uSdHandle);
+  return false;
+}
+
+static bool sdReadDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
+{
+  uint32_t size = num_of_blocks * BLOCKSIZE;
+
+  // Drop any dirty lines first. If one were evicted while the DMA is running it
+  // would land on top of what the card just delivered.
+  cacheInvalidate(p_data, size);
+
+  is_rx_done = false;
+  is_error   = false;
+
+  if (HAL_SD_ReadBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
+  {
+    return false;      // nothing was started, so there is nothing to abort
+  }
+  if (sdWaitDone(&is_rx_done, timeout_ms) == false)
+  {
+    return sdFail();
+  }
+
+  cacheInvalidate(p_data, size);
+  return true;
+}
+
+static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
+{
+  // Push the data out of the cache before the DMA reads it.
+  cacheClean(p_data, num_of_blocks * BLOCKSIZE);
+
+  is_tx_done = false;
+  is_error   = false;
+
+  if (HAL_SD_WriteBlocks_DMA(&uSdHandle, p_data, block_addr, num_of_blocks) != HAL_OK)
+  {
+    return false;
+  }
+  if (sdWaitDone(&is_tx_done, timeout_ms) == false)
+  {
+    return sdFail();
+  }
+  return true;
+}
 
 #if HW_SD_USE_CMDIF == 1
 void sdCmdifInit(void)

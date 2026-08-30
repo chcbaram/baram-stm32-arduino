@@ -82,6 +82,13 @@ extern "C" {
 #define HW_SD_CMD_PINS            (GPIO_PIN_2)
 #define HW_SD_CMD_CLK_ENABLE()    __HAL_RCC_GPIOD_CLK_ENABLE()
 
+// SDMMC_CK = sdmmc_ker_ck / (2 * CLKDIV), and the kernel is PLL1Q at 48 MHz.
+// 1 gives 24 MHz, just under the 25 MHz ceiling for default speed. Going faster
+// needs CMD6 to put the card in high speed mode first, which the HAL does not
+// do on its own. The HAL's own SDMMC_HSPEED_CLK_DIV is 2, written for a 200 MHz
+// kernel where it lands on 50 MHz; here it would only give 12 MHz.
+#define HW_SD_CLK_DIV     1
+
 /*
  * Card detect is not usable as the board ships.
  *
