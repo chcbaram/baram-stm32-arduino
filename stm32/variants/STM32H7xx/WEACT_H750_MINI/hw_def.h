@@ -230,9 +230,19 @@ extern "C" {
                                    | GPIO_PIN_5 | GPIO_PIN_6) /* D2,D3,D4,D6,D7 */
 
 /*
- * Sync polarities, from the manufacturer's example for this board and the
- * OV7725 module that ships with it. Another reference driver for the same
- * sensor uses VSYNC active high; on this board that captures nothing.
+ * Sync polarities.
+ *
+ * VSYNC active high, which is what an OV2640 drives: it raises VSYNC through
+ * the vertical blanking, so the DCMI has to treat high as "no data here".
+ *
+ * Getting this wrong does not simply invert anything - the DCMI never lines up
+ * with the sensor's frames. The picture is noise, frame events arrive far more
+ * often than the sensor can produce frames, and data turns up when the
+ * interface is not expecting it, which shows as overruns. All three at once is
+ * the signature.
+ *
+ * The manufacturer's example uses VSYNC low, but that example ships with their
+ * OV7725 camera board; this board's module is an OV2640.
  */
 #define HW_CAMERA_VS_POLARITY     DCMI_VSPOLARITY_LOW
 #define HW_CAMERA_HS_POLARITY     DCMI_HSPOLARITY_LOW

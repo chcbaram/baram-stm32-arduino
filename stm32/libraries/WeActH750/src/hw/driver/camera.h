@@ -326,6 +326,7 @@ bool cameraReset();
 // What the sensor was actually configured for. Worth asking rather than
 // assuming: a size the sensor rejects leaves it at its power-on default, and
 // the difference only shows up as a DCMI overrun.
+int  cameraSetColorbar(int enable);
 bool cameraGetResolution(int32_t *p_width, int32_t *p_height);
 
 // HAL error codes from the last failure. See the note in camera.c.

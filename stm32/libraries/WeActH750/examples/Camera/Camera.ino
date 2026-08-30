@@ -31,6 +31,9 @@ static uint16_t cam_buf[HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT]
 
 static bool cam_ok = false;
 
+// Sensor configuration, read back once during bring-up.
+static uint8_t reg_im, reg_byp, reg_zw, reg_zh, reg_zhh, reg_hs, reg_vs, reg_c7;
+
 /*
  * Counts edges on the XCLK pin.
  *
@@ -82,6 +85,11 @@ static void report(void)
   int32_t w = 0, h = 0;
   cameraGetResolution(&w, &h);
   Serial.printf("resolution  : %ld x %ld\n", (long)w, (long)h);
+  Serial.printf("IMAGE_MODE  : 0x%02X (0x08=RGB565 0x00=YUV422 +0x10=JPEG)  R_BYPASS 0x%02X\n",
+                reg_im, reg_byp);
+  Serial.printf("out window  : ZMOW %u ZMOH %u ZMHH 0x%02X -> %u x %u   HSIZE8 %u VSIZE8 %u   COM7 0x%02X\n",
+                reg_zw, reg_zh, reg_zhh, (unsigned)(reg_zw << 2), (unsigned)(reg_zh << 2),
+                reg_hs, reg_vs, reg_c7);
   extern uint32_t dbg_frame_cnt, dbg_err_cnt, dbg_err_lisr, dbg_err_s0cr, dbg_err_ndtr, dbg_err_ris;
   Serial.printf("frames/errs : %lu / %lu\n",
                 (unsigned long)dbg_frame_cnt, (unsigned long)dbg_err_cnt);
@@ -153,6 +161,39 @@ void setup()
     cameraSetFramesize(HW_CAMERA_FRAMESIZE);
     // Circular DMA: the sensor keeps refilling this buffer on its own, so
     // nothing has to re-arm it per frame.
+    // Bring-up aid: set to 1 to have the sensor emit its colour bar instead of
+    // a picture, which separates a bad capture path from a bad sensor setup.
+    cameraSetColorbar(1);
+
+    /*
+     * What the sensor is actually set to, read back rather than assumed.
+     *
+     * IMAGE_MODE says which of YUV422 / RGB565 / JPEG the DSP is emitting -
+     * getting that wrong makes a perfectly good capture look like noise, and it
+     * is not visible from this side any other way. ZMOW/ZMOH/ZMHH are the
+     * output window the DSP was told to produce, in units of four pixels.
+     */
+    {
+      uint8_t im = 0, byp = 0, zw = 0, zh = 0, zhh = 0, hs = 0, vs = 0, c7 = 0;
+      i2cWriteByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xFF, 0x00, 100);   // DSP bank
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xDA, &im,  100);    // IMAGE_MODE
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0x05, &byp, 100);    // R_BYPASS
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0x5A, &zw,  100);    // ZMOW
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0x5B, &zh,  100);    // ZMOH
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0x5C, &zhh, 100);    // ZMHH
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xC0, &hs,  100);    // HSIZE8
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xC1, &vs,  100);    // VSIZE8
+      i2cWriteByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xFF, 0x01, 100);   // sensor bank
+      i2cReadByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0x12, &c7,  100);    // COM7
+      i2cWriteByte2(_DEF_I2C1, OV2640_SLV_ADDR, 0xFF, 0x00, 100);   // leave in DSP
+
+      // Kept for the periodic report: reading them once is harmless, but doing
+      // it repeatedly means writing the bank select every time, which leaves
+      // the sensor pointed at the wrong bank and stops it delivering frames.
+      reg_im = im; reg_byp = byp; reg_zw = zw; reg_zh = zh; reg_zhh = zhh;
+      reg_hs = hs; reg_vs = vs; reg_c7 = c7;
+    }
+
     cam_ok = cameraStart((uint8_t *)cam_buf, CAMERA_MODE_CONTINUOUS);
     Serial.printf("cameraStart : %s\n", cam_ok ? "ok" : "FAILED");
     Serial.flush();

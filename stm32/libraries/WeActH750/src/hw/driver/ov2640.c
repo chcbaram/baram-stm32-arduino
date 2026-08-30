@@ -259,6 +259,23 @@ static void _set_framesize(uint8_t framesize)
 
     // Enable DSP
     OV2640_WR_Reg(R_BYPASS, R_BYPASS_DSP_EN);
+
+    /*
+     * Write the output window again, last.
+     *
+     * It is set above too, before the size table - which is the order this was
+     * ported with - but the table resets the DVP block on its way past
+     * (REG_RESET_DVP) and toggles the DSP bypass, and the width does not
+     * survive that: reading ZMOW back afterwards gives zero while ZMOH keeps
+     * its value. A zero width is not a small error. The DSP emits a degenerate
+     * line structure, so the DCMI never locks to the sensor: the picture is
+     * noise, frame events arrive far faster than frames can exist, and the
+     * interface reports both synchronisation errors and overruns.
+     */
+    OV2640_WR_Reg(BANK_SEL, BANK_SEL_DSP);
+    OV2640_WR_Reg(ZMOW, (w >> 2) & 0xFF);
+    OV2640_WR_Reg(ZMOH, (h >> 2) & 0xFF);
+    OV2640_WR_Reg(ZMHH, ((h >> 8) & 0x04) | ((w >> 10) & 0x03));
 }
 
 //---------------------------------------------

@@ -473,6 +473,21 @@ void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err)
   }
 }
 
+/*
+ * The sensor's built-in colour bar.
+ *
+ * The classic bring-up check: it makes the sensor emit a known pattern, so a
+ * buffer full of clean vertical bands proves the DCMI, the DMA and the pixel
+ * format are all right and points any remaining trouble at the lens, the
+ * exposure or the sensor's own configuration. A buffer that still looks like
+ * rubbish says the capture path itself is wrong.
+ */
+int cameraSetColorbar(int enable)
+{
+  if (is_init != true || sensor.set_colorbar == NULL) return -1;
+  return sensor.set_colorbar(&sensor, enable);
+}
+
 bool cameraGetResolution(int32_t *p_width, int32_t *p_height)
 {
   if (is_init != true) return false;
