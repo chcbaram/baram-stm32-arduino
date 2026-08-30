@@ -5,7 +5,7 @@
 # https://arduino.github.io/arduino-cli/latest/platform-specification/
 
 name=BARAM STM32 Boards
-version=0.1.1
+version=0.1.2
 
 # Derived from the STM32duino core (stm32duino/Arduino_Core_STM32) 2.12.0,
 # trimmed to the STM32H7 family. See README.md.
