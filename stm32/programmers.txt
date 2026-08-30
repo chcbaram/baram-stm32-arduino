@@ -30,10 +30,10 @@
 dfuBoot.name=USB DFU (STM32 system bootloader)
 dfuBoot.program.tool=bootburn
 dfuBoot.program.script=dfu-util.sh
-dfuBoot.program.path={runtime.tools.STM32Tools.path}
+dfuBoot.program.path={runtime.platform.path}/tools/dfu-util
 dfuBoot.program.dfu_vidpid=0483:df11
 
-dfuBoot.program.burn_pattern="{busybox}" sh "{program.path}/{program.script}" -d {program.dfu_vidpid} -a 0 -s 0x08000000:leave -D "{bootloader.file}.bin"
+dfuBoot.program.burn_pattern="{busybox}" sh "{program.path}/{program.script}" "{runtime.tools.STM32Tools.path}" -d {program.dfu_vidpid} -a 0 -s 0x08000000 -R -D "{bootloader.file}.bin"
 
 dfuBoot.program.params.verbose=
 dfuBoot.program.params.quiet=

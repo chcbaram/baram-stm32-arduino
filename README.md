@@ -130,8 +130,14 @@ USB 식별자는 전부 [pid.codes](https://pid.codes) 의 `0x1209` 아래입니
 *Tools > Programmer* 에서 방법을 고르고 *Tools > Burn Bootloader* 입니다.
 
 - **USB DFU (STM32 시스템 부트로더)** — SW1(BOOT0)을 누른 채 SW3(NRST)를 눌렀다
-  떼고 SW1 을 뗍니다. 보드가 `0483:df11` 로 열거됩니다. STM32Tools 에 함께
-  들어 있는 `dfu-util` 을 쓰므로 따로 설치할 것이 없습니다.
+  떼고 SW1 을 뗍니다. 보드가 `0483:df11` 로 열거됩니다. 따로 설치할 것이 없습니다.
+  **다 구운 뒤에는 NRST 를 한 번 눌러 주십시오** — dfu-util 이 USB 를 리셋해도
+  BOOT0 로 들어간 DFU 모드는 그대로 남습니다.
+
+  윈도우에서는 이 패키지가 `dfu-util` 을 직접 배포합니다. STM32Tools 가 함께
+  주는 윈도우 판본이 2007 년 것이라 주소 지정(`-s`)을 아예 모르기 때문입니다.
+  macOS 와 리눅스는 STM32Tools 것을 그대로 씁니다. 자세한 것은
+  `stm32/tools/dfu-util/README.md` 를 보십시오.
 - **ST-LINK (SWD)** — 플래시에 무엇이 들어 있든 동작하므로 이쪽이 복구 경로입니다.
 
 ### WeActH750 라이브러리
