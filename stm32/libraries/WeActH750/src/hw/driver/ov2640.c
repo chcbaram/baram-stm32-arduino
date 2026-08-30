@@ -164,27 +164,24 @@ static int reset()
     OV2640_WR_Reg(COM7, COM7_SRST);
 
     /*
-     * The delay after the software reset.
+     * 300 ms after the software reset.
      *
-     * 5 ms is what this was ported with and what streams today. The
-     * manufacturer's other example for the same sensor uses 100 ms, which is
-     * worth remembering - but on this board 100 ms produces no capture at all,
-     * so it is not simply a matter of waiting longer.
+     * This part has no reset or power down line on this board - the header's
+     * PWDN reaches PA7 only through solder bridge SB1, which is open - so
+     * COM7_SRST is the only reset there is, and it has to be given time. At the
+     * 5 ms this was ported with, the sensor comes up streaming about three
+     * times in five: the register table starts arriving while the part is still
+     * settling, the writes are accepted over SCCB, and the DSP ends up
+     * unconfigured. From outside that looks like a camera that answers its
+     * address and drives sync but never sends a pixel.
      *
-     * Left at 5. The note below is kept because the reasoning still applies to
-     * whatever finally fixes the sensor bring-up.
+     * A power cycle always fixed it, which is what pointed here: the previous
+     * upload only soft resets the MCU, so whatever state the sensor was left in
+     * survives into the next run.
      *
-     * ---
-     *
-     * The version this was ported from waits 5 ms. The manufacturer's other
-     * example for the same sensor waits 100, and that is the one to copy: at
-     * 5 ms the part is still coming out of reset when the register table starts
-     * arriving, so the writes are accepted over SCCB but the DSP never ends up
-     * configured. What that looks like from outside is a sensor that answers
-     * its address and drives sync, while its data lines sit still - which is
-     * indistinguishable from a wiring fault until you wait longer.
+     * 300 ms is what the maintained drivers use.
      */
-    ov2640_delay(5);
+    ov2640_delay(300);
     wrSensorRegs(ov2640_Slow_regs);
     // 30 ms
     ov2640_delay(30);
