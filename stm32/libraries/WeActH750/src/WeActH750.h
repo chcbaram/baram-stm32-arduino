@@ -166,6 +166,16 @@ public:
   // True when a frame has completed since the last time this was asked.
   bool available(void);
 
+  /*
+   * Frames per second the sensor is delivering, refreshed about once a second.
+   *
+   * Counted from the capture interrupt, not from how often a sketch draws: the
+   * panel takes about 5 ms a frame and the sensor does not wait for it, so the
+   * two numbers are different and the sensor's is the one that says whether the
+   * capture is healthy.
+   */
+  uint32_t fps(void);
+
   // The most recent frame. RGB565, width() x height().
   uint16_t *frameBuffer(void);
   int32_t width(void);
@@ -196,7 +206,10 @@ public:
   void colorBar(bool enable);
 
 private:
-  bool running = false;
+  bool     running    = false;
+  uint32_t fps_value  = 0;
+  uint32_t fps_frames = 0;
+  uint32_t fps_time   = 0;
 };
 
 class SDClass;

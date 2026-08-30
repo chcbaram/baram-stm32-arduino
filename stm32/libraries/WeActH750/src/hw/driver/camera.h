@@ -293,6 +293,8 @@ int cameraSetAutoWhitebal(int enable, float r_gain_db, float g_gain_db, float b_
 int cameraGetRgbGainDb(float *r_gain_db, float *g_gain_db, float *b_gain_db);
 
 // Enable/disable the hmirror mode.
+uint32_t cameraGetFrameCount(void);
+
 int cameraSetHmirror(int enable);
 
 // Enable/disable the vflip mode.

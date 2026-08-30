@@ -126,6 +126,26 @@ bool WeActCamera::available(void)
   return running && cameraIsAvailble();
 }
 
+uint32_t WeActCamera::fps(void)
+{
+  uint32_t now   = millis();
+  uint32_t count = cameraGetFrameCount();
+
+  if (fps_time == 0) {
+    fps_time   = now;
+    fps_frames = count;
+    return 0;
+  }
+
+  uint32_t elapsed = now - fps_time;
+  if (elapsed >= 1000) {
+    fps_value  = ((count - fps_frames) * 1000) / elapsed;
+    fps_frames = count;
+    fps_time   = now;
+  }
+  return fps_value;
+}
+
 uint16_t *WeActCamera::frameBuffer(void)
 {
   return cam_frame;

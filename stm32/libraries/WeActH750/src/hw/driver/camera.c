@@ -489,6 +489,18 @@ void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err)
  * a link error rather than a picture. Doing it in the sensor rather than while
  * copying costs nothing per frame.
  */
+/*
+ * Frames the DCMI has completed since power-up.
+ *
+ * Counted in the frame-event interrupt, so it reflects what the sensor actually
+ * delivered rather than what a caller drew. The difference matters when the
+ * panel is slower than the sensor - which it is here.
+ */
+uint32_t cameraGetFrameCount(void)
+{
+  return dbg_frame_cnt;
+}
+
 int cameraSetHmirror(int enable)
 {
   if (is_init != true || sensor.set_hmirror == NULL) return -1;

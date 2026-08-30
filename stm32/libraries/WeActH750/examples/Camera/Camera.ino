@@ -22,7 +22,7 @@ void setup()
   board.begin(115200);
   board.lcd.setFont(LCD_FONT_HAN);
 
-  if (board.cam.begin()) {
+  if (board.cam.begin(FRAMESIZE_QQVGA)) {
     Serial.printf("camera : %ld x %ld\n",
                   (long)board.cam.width(), (long)board.cam.height());
   } else {
@@ -44,7 +44,23 @@ void loop()
   {
     if (board.cam.isRunning()) {
       board.cam.drawTo(board.lcd);
+
+      /*
+       * Overlay, drawn after the frame so it sits on top of it.
+       *
+       * The small ASCII font rather than the Hangul one: at 16 pixels tall the
+       * latter would take a fifth of an 80 pixel panel. The frame rate comes
+       * from the capture interrupt, so it reports what the sensor delivers -
+       * the panel is slower, and its own rate would not tell you whether the
+       * capture is healthy.
+       */
+      board.lcd.setFont(LCD_FONT_07x10);
+      board.lcd.printf(2, 2, white, "%ldx%ld", (long)board.cam.width(),
+                                               (long)board.cam.height());
+      board.lcd.printf(2, board.lcd.height() - 12, white, "%lu fps",
+                       (unsigned long)board.cam.fps());
     } else {
+      board.lcd.setFont(LCD_FONT_HAN);
       board.lcd.clear(black);
       board.lcd.printf(4, 2,  red,  "카메라 없음");
       board.lcd.printf(4, 24, gray, "헤더 연결 확인");
