@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| version | `V260830R4` |
+| version | `V260830R6` |
 | name | `WEACT-H750-BOOT` |
-| size | 99,960 bytes |
-| sha256 | `4cd5a017257a36b346a757cad893077e9afda31bbc3668514e604682da14fe1f` |
+| size | 100,264 bytes |
+| sha256 | `cfa73c0b276277b69e568c9ba9c696e1476fde0b141efeac2269147ec44d2c11` |
 
 Shipped as both `.bin` and `.hex`. The `.hex` carries its own load addresses,
 so it can be handed to a programmer without naming 0x08000000 separately.
