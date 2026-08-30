@@ -78,37 +78,14 @@ static void report(void)
   Serial.println(F("--- camera ---"));
   Serial.printf("HSI48 ready : %s\n", (RCC->CR & RCC_CR_HSI48RDY) ? "yes" : "NO");
   Serial.printf("XCLK edges  : %lu\n", (unsigned long)xclkEdges());
-  Serial.printf("SCCB answer : %s (expecting 0x%02X)\n",
-                i2cIsDeviceReady(_DEF_I2C1, OV7725_SLV_ADDR) ? "yes" : "NO",
-                OV7725_SLV_ADDR);
-
-  bool sda = false, scl = false;
-  i2cBusLevels(_DEF_I2C1, &sda, &scl);
-  Serial.printf("bus idle    : SDA %s  SCL %s\n", sda ? "high" : "LOW", scl ? "high" : "LOW");
-
-  uint8_t found[8];
-  uint8_t n = i2cScan(_DEF_I2C1, found, sizeof(found));
-  Serial.printf("i2c scan    : %u device(s)", n);
-  for (uint8_t i = 0; i < n; i++) Serial.printf("  0x%02X", found[i]);
-  Serial.println();
-  /*
-   * Whatever answered, ask it who it is.
-   *
-   * An OV7725 reports its id straight from 0x0A. An OV2640 has banked
-   * registers and has to be pointed at the sensor bank first (0xFF = 1), so
-   * both are tried and printed - the pair identifies the part without guessing
-   * from the address alone.
-   */
-  for (uint8_t i = 0; i < n; i++) {
-    uint8_t raw = 0, pidh = 0, pidl = 0;
-    i2cReadByte2(_DEF_I2C1, found[i], 0x0A, &raw, 100);
-    i2cWriteByte2(_DEF_I2C1, found[i], 0xFF, 0x01, 100);   // OV2640 sensor bank
-    i2cReadByte2(_DEF_I2C1, found[i], 0x0A, &pidh, 100);
-    i2cReadByte2(_DEF_I2C1, found[i], 0x0B, &pidl, 100);
-    Serial.printf("id @0x%02X    : raw 0x%02X   banked 0x%02X%02X\n",
-                  found[i], raw, pidh, pidl);
-  }
-
+  // Passive only. Anything that writes to the sensor belongs in setup().
+  int32_t w = 0, h = 0;
+  cameraGetResolution(&w, &h);
+  Serial.printf("resolution  : %ld x %ld\n", (long)w, (long)h);
+  Serial.printf("DCMI SR/RIS : 0x%02lX 0x%02lX\n",
+                (unsigned long)DCMI->SR, (unsigned long)DCMI->RISR);
+  Serial.printf("DMA NDTR    : %lu\n",
+                (unsigned long)HW_CAMERA_DMA_STREAM->NDTR);
   Serial.printf("camera      : %s\n", cam_ok ? "running" : "FAILED");
   Serial.printf("frame seen  : %s\n", cameraIsAvailble() ? "yes" : "not yet");
   Serial.printf("buf sig     : 0x%08lX\n", (unsigned long)bufSignature());
@@ -119,7 +96,41 @@ void setup()
   board.begin(115200);
   board.lcd.setFont(LCD_FONT_HAN);
 
+  // Markers, not decoration: cameraInit() walks a long SCCB register table and
+  // a stall inside it is otherwise indistinguishable from a sketch that never
+  // started. Each line tells the next stage was reached.
+  Serial.println(F("\nboot"));
+  Serial.flush();
+
+  /*
+   * Identify whatever is on the bus, once, before the driver touches it.
+   *
+   * This has to happen here rather than in the repeating report: an OV2640 has
+   * banked registers, so reading its id means writing the bank select first,
+   * and doing that every couple of seconds leaves the sensor pointed at the
+   * wrong bank in between - which stops it delivering frames. The probe is
+   * cheap to run once and actively harmful to repeat.
+   */
+  {
+    uint8_t seen[8];
+    i2cBegin(_DEF_I2C1, HW_CAMERA_I2C_FREQ / 1000);
+    uint8_t m = i2cScan(_DEF_I2C1, seen, sizeof(seen));
+    Serial.printf("i2c scan    : %u device(s)", m);
+    for (uint8_t i = 0; i < m; i++) Serial.printf("  0x%02X", seen[i]);
+    Serial.println();
+    for (uint8_t i = 0; i < m; i++) {
+      uint8_t pidh = 0, pidl = 0;
+      i2cWriteByte2(_DEF_I2C1, seen[i], 0xFF, 0x01, 100);   // OV2640 sensor bank
+      i2cReadByte2(_DEF_I2C1, seen[i], 0x0A, &pidh, 100);
+      i2cReadByte2(_DEF_I2C1, seen[i], 0x0B, &pidl, 100);
+      Serial.printf("id @0x%02X    : 0x%02X%02X\n", seen[i], pidh, pidl);
+    }
+    Serial.flush();
+  }
+
   cam_ok = cameraInit();
+  Serial.printf("cameraInit  : %s\n", cam_ok ? "ok" : "FAILED");
+  Serial.flush();
 
   if (cam_ok) {
     cameraSetPixformat(PIXFORMAT_RGB565);
@@ -127,6 +138,8 @@ void setup()
     // Circular DMA: the sensor keeps refilling this buffer on its own, so
     // nothing has to re-arm it per frame.
     cam_ok = cameraStart((uint8_t *)cam_buf, CAMERA_MODE_CONTINUOUS);
+    Serial.printf("cameraStart : %s\n", cam_ok ? "ok" : "FAILED");
+    Serial.flush();
   }
 
   report();

@@ -183,9 +183,34 @@ bool cameraInit(void)
       continue;
     }
 
+    /*
+     * Put the sensor into a known state before anything else talks to it.
+     *
+     * cameraReset() below resets the DCMI, not the sensor - the names are
+     * unhelpfully close. An OV2640 comes out of power-on with its registers in
+     * a state that produces nothing, and its reset() is what writes the base
+     * register set, so skipping this leaves the DCMI capturing from a sensor
+     * that was never configured.
+     */
+    if (sensor.reset != NULL)
+    {
+      sensor.reset(&sensor);
+    }
+
     cameraReset();
-    cameraSetPixformat(PIXFORMAT_RGB565);
+
+    /*
+     * Frame size before pixel format, not after.
+     *
+     * An OV2640's set_pixformat() re-applies the current frame size as part of
+     * its work, so running it while the size is still FRAMESIZE_INVALID writes
+     * an output window of zero and leaves the sensor at its power-on UXGA.
+     * The DCMI then receives far more data than the DMA was armed for, the FIFO
+     * overruns, and the HAL aborts the transfer - one partial frame and then
+     * nothing, with no error a sketch can see.
+     */
     cameraSetFramesize(FRAMESIZE_QVGA);
+    cameraSetPixformat(PIXFORMAT_RGB565);
 
     is_init = true;
     return true;
@@ -376,6 +401,15 @@ static int32_t getBpp(pixformat_t pixformat)
   return bpp;
 }
 
+bool cameraGetResolution(int32_t *p_width, int32_t *p_height)
+{
+  if (is_init != true) return false;
+
+  if (p_width  != NULL) *p_width  = resolution[sensor.framesize][0];
+  if (p_height != NULL) *p_height = resolution[sensor.framesize][1];
+  return true;
+}
+
 bool cameraIsAvailble(void)
 {
   if (is_requested == true)
@@ -518,20 +552,53 @@ static void DCMI_MspInit(DCMI_HandleTypeDef *hdcmi)
   hdma_handler.Init.MemDataAlignment    = DMA_MDATAALIGN_WORD;
   hdma_handler.Init.Mode                = DMA_CIRCULAR;
   hdma_handler.Init.Priority            = DMA_PRIORITY_HIGH;
-  hdma_handler.Init.FIFOMode            = DMA_FIFOMODE_ENABLE;
-  hdma_handler.Init.FIFOThreshold       = DMA_FIFO_THRESHOLD_FULL;
-  hdma_handler.Init.MemBurst            = DMA_MBURST_SINGLE;
-  hdma_handler.Init.PeriphBurst         = DMA_PBURST_SINGLE;
+
+  /*
+   * Direct mode - no FIFO.
+   *
+   * With the FIFO enabled the stream buffers up to its threshold before writing
+   * out, and the DCMI's own four word FIFO overruns while it waits. That is the
+   * failure this started as: a frame captured to about 85% and then an overrun,
+   * with the HAL aborting the transfer and never restarting it.
+   *
+   * The manufacturer's example for this board runs direct mode for the same
+   * reason. There is nothing to gain from the FIFO here anyway: the transfer is
+   * word to word, so no packing is needed.
+   */
+  hdma_handler.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
 
   __HAL_LINKDMA(hdcmi, DMA_Handle, hdma_handler);
+
+  /*
+   * Initialise the stream before enabling its interrupt, not after.
+   *
+   * The order is not cosmetic. This stream arrives holding whatever the last
+   * owner left in it: the bootloader hands over with a bl rather than a reset,
+   * and bspDeInit() masks the NVIC but does not reset the DMA peripherals, so
+   * DMA1 still has the bootloader's peripheral address, its enabled interrupt
+   * sources and - the part that bites - a transfer complete flag still set.
+   *
+   * Enable the NVIC line first and that stale flag raises the interrupt
+   * immediately, while the handle has been linked but not yet initialised. Its
+   * StreamIndex is still whatever was in memory, so HAL_DMA_IRQHandler tests
+   * and clears the wrong bit, the real flag stays set, and the interrupt
+   * re-enters forever. The symptom is a sketch that never reaches loop() with
+   * no fault to show for it - the CPU is simply never out of the handler.
+   *
+   * HAL_DMA_Init() clears the stream's flags as part of its work, so doing it
+   * first closes the window. The explicit NVIC clear covers the case where the
+   * line was already pending before we got here.
+   */
+  (void)HAL_DMA_Init(hdcmi->DMA_Handle);
+
+  HAL_NVIC_ClearPendingIRQ(HW_CAMERA_DMA_IRQn);
+  HAL_NVIC_ClearPendingIRQ(DCMI_IRQn);
 
   HAL_NVIC_SetPriority(DCMI_IRQn, 0x05, 0);
   HAL_NVIC_EnableIRQ(DCMI_IRQn);
 
   HAL_NVIC_SetPriority(HW_CAMERA_DMA_IRQn, 0x05, 0);
   HAL_NVIC_EnableIRQ(HW_CAMERA_DMA_IRQn);
-
-  (void)HAL_DMA_Init(hdcmi->DMA_Handle);
 }
 
 static void DCMI_MspDeInit(DCMI_HandleTypeDef *hdcmi)

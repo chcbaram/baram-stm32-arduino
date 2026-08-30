@@ -323,6 +323,11 @@ const uint16_t *cameraGetColorPalette();
 
 
 bool cameraReset();
+// What the sensor was actually configured for. Worth asking rather than
+// assuming: a size the sensor rejects leaves it at its power-on default, and
+// the difference only shows up as a DCMI overrun.
+bool cameraGetResolution(int32_t *p_width, int32_t *p_height);
+
 bool cameraIsAvailble(void);
 bool cameraStart(uint8_t *pBff, uint32_t Mode);
 bool cameraStop(void);
