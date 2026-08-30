@@ -1,32 +1,30 @@
 # baram-stm32-arduino
 
-Arduino board support for BARAM's STM32 boards, derived from
-[STM32duino](https://github.com/stm32duino/Arduino_Core_STM32) 2.12.0 and
-trimmed to only what these boards need.
+BARAM 의 STM32 보드용 아두이노 보드 패키지.
+[STM32duino](https://github.com/stm32duino/Arduino_Core_STM32) 2.12.0 에서
+이 보드들에 필요한 것만 추려 만들었습니다.
 
-## Boards
+## 보드
 
-| Board | MCU | Notes |
+| 보드 | MCU | 비고 |
 |---|---|---|
-| **WEACT-H750-MINI** | STM32H750VBT6 | Custom bootloader; the sketch runs from external QSPI flash |
-| HiGenis Dummy | — | Placeholder so the HiGenis group appears in the menu |
+| **WEACT-H750-MINI** | STM32H750VBT6 | 자체 부트로더. 스케치가 외부 QSPI 플래시에서 실행됩니다 |
+| HiGenis Dummy | — | HiGenis 그룹이 메뉴에 보이게 하는 자리표시자 |
 
-## Installing
+## 설치
 
-Add **both** of these URLs under *Preferences > Additional boards manager URLs*:
+*Preferences > Additional boards manager URLs* 에 **두 개 다** 넣습니다.
 
 ```
 https://raw.githubusercontent.com/chcbaram/baram-stm32-arduino/main/package_baram_stm32_index.json
 https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
 ```
 
-The second one is required: this package hosts no toolchain of its own and
-depends on the compiler, OpenOCD, STM32Tools and CMSIS published by
-STMicroelectronics. Board Manager downloads them automatically.
+두 번째가 반드시 필요합니다. 이 패키지는 툴체인을 직접 갖고 있지 않고
+컴파일러, OpenOCD, STM32Tools, CMSIS 를 STMicroelectronics 가 배포하는 것에
+의존합니다. Board Manager 가 알아서 받아옵니다.
 
-Then install **BARAM STM32 Boards** from *Tools > Board > Boards Manager*.
-
-Select the board with:
+그다음 *Tools > Board > Boards Manager* 에서 **BARAM STM32 Boards** 를 설치합니다.
 
 ```
 Tools > Board             > BARAM STM32 Boards > BARAM
@@ -35,113 +33,111 @@ Tools > Board part number > WEACT-H750-MINI
 
 ## WEACT-H750-MINI
 
-The STM32H750's 128 KB of internal flash is a single erase sector, so it holds
-the bootloader and nothing else. **Sketches are linked for, and execute in
-place from, the external QSPI flash** (W25Q64, 8 MB, memory mapped at
-`0x90000000`):
+STM32H750 의 내부 플래시 128KB 는 지우기 단위가 하나뿐이라 부트로더만 들어갑니다.
+**스케치는 외부 QSPI 플래시에 링크되고 거기서 그대로 실행됩니다**
+(W25Q64, 8MB, `0x90000000` 에 메모리 맵).
 
 ```
-0x90000000  4K       TAG sector    written by the bootloader after verification
-0x90001000  1K       app vectors   VTOR points here
-0x90001400  1K       firm_ver_t    the .version section
-0x90001800  8M - 6K  app code
+0x90000000  4K       TAG 섹터      부트로더가 검증 후 기록
+0x90001000  1K       앱 벡터       VTOR 이 여기를 가리킨다
+0x90001400  1K       firm_ver_t    .version 섹션
+0x90001800  8M - 6K  앱 코드
 ```
 
-Three consequences worth knowing about:
+알아둘 것이 셋 있습니다.
 
-- **The bootloader owns the clock tree.** It hands over a running 400 MHz
-  system clock, and the variant deliberately does not reconfigure it. PLL2
-  feeds the QSPI kernel clock, so touching PLL2 stops the memory the CPU is
-  executing from; PLL1 cannot be changed while it is the system clock source
-  anyway. PLL3 is free for the application, and the variant puts I2C, SPI and
-  the ADC on it. If a different system clock is needed, change it in the
-  bootloader - nothing here needs to change.
-- **No post-build tagging tool is needed.** The variant emits a `firm_ver_t`
-  into `.version`; the bootloader reads the size from it, computes the CRC
-  itself and promotes the image to a verified TAG on the first boot.
-- **Reflashing the bootloader leaves the sketch alone.** The QSPI contents,
-  including the TAG, survive - the board boots straight back into whatever
-  application was already there.
+- **QSPI 커널 클럭은 절대 멈추면 안 됩니다.** CPU 가 거기서 명령어를 가져오고
+  있기 때문입니다. 부트로더가 QUADSPI 를 D1HCLK 에 물려 넘겨주고, D1HCLK 은
+  SYSCLK 을 따라가므로 `SystemInit()` 이 SYSCLK 을 HSI 64MHz 로 내려도 멈추지는
+  않습니다. 그래서 variant 는 PLL1 을 480MHz 로 올리되 `RCC_PERIPHCLK_QSPI` 는
+  **선택하지 않습니다.** QSPI 를 PLL 에 물리면 `SystemInit()` 이 PLL 을 끄는
+  순간 명령어 인출이 멈추고, 폴트조차 못 냅니다. SCK 는 D1HCLK/2 = 120MHz 로
+  W25Q64JV 의 133MHz 한계 안입니다.
+- **후처리 태깅 도구가 필요 없습니다.** variant 가 `.version` 에 `firm_ver_t` 를
+  넣고, 부트로더가 거기서 크기를 읽어 CRC 를 스스로 계산해 첫 부팅에 TAG 로
+  승격시킵니다.
+- **부트로더를 다시 구워도 스케치는 그대로입니다.** QSPI 내용과 TAG 가 살아남아
+  원래 있던 앱으로 바로 부팅합니다.
 
-### Uploading
+### 업로드
 
-USB support defaults to CDC, so a sketch always enumerates and can always be
-replaced over the same cable it is powered by. Upload works the way it does on
-any other USB-only Arduino board: arduino-cli performs a 1200 bps touch, the
-sketch answers it by rebooting into the bootloader, and `tools/baramdl` writes
-the new image over the bootloader's CDC interface at about 290 KB/s.
+USB 가 기본으로 CDC 라 스케치는 항상 열거되고, 전원을 받는 그 케이블로 언제든
+교체할 수 있습니다. USB 만 있는 다른 아두이노 보드와 같은 방식입니다 —
+1200bps 터치를 받으면 스케치가 부트로더로 재부팅하고, `tools/baramdl` 이
+부트로더의 CDC 로 새 이미지를 씁니다.
 
-Sketches can trigger the same reboot themselves:
+스케치가 직접 부를 수도 있습니다.
 
 ```cpp
-rebootToBootloader();       // stay in the bootloader
-rebootToBootloader(true);   // and bring up the UF2 mass storage volume
+rebootToBootloader();       // 부트로더에 머무른다
+rebootToBootloader(true);   // UF2 대용량 저장 볼륨까지 띄운다
 ```
 
-If a sketch is built with USB support set to None, or crashes before USB comes
-up, **pressing reset twice within 300 ms** keeps the bootloader resident. That
-path is handled entirely by the bootloader, so it works no matter what the
-sketch does.
+USB 를 끈 채 빌드했거나 USB 가 올라오기 전에 죽는 스케치라면,
+**300ms 안에 리셋을 두 번 누르면** 부트로더가 상주합니다. 이 경로는 전적으로
+부트로더가 처리하므로 스케치가 무엇을 하든 동작합니다.
 
-| Method | Needs | |
+| 방법 | 필요한 것 | |
 |---|---|---|
-| Bootloader USB (CDC) | a USB cable | default, fully automatic, ~300 KB/s |
-| UF2 mass storage | a reset double-tap | copies the `.uf2` onto the drive |
-| OpenOCD QSPI (SWD) | ST-LINK on PA13/PA14 | `debugger/weact_h750_qspi.cfg`, untested |
+| Bootloader USB (CDC) | USB 케이블 | 기본. 완전 자동, 약 270 KB/s |
+| UF2 mass storage | 리셋 더블탭 | `.uf2` 를 드라이브에 복사 |
+| OpenOCD QSPI (SWD) | PA13/PA14 에 ST-LINK | `debugger/weact_h750_qspi.cfg` |
 
-Every build also produces a `.uf2` alongside the `.bin`, and *Sketch > Export
-Compiled Binary* puts it in the sketch's `build/` folder. Double-tap reset to
-bring up the `H750BOOT` drive and drag it across - no tools involved at all.
+빌드할 때마다 `.bin` 옆에 `.uf2` 도 만들어지고, *Sketch > Export Compiled Binary*
+가 스케치의 `build/` 에 넣어줍니다. 리셋을 두 번 눌러 `H750BOOT` 드라이브를
+띄우고 끌어다 놓으면 됩니다 — 도구가 전혀 필요 없고, 복사가 끝나면 **리셋 없이
+스케치가 바로 실행됩니다.**
 
-The UF2 route cannot reset the board for you: the mass storage volume only
-appears on a double-tap, while the 1200 bps touch enters plain CDC mode. That is
-why the menu entry says so.
+UF2 경로는 보드를 대신 리셋해 줄 수 없습니다. 대용량 저장 볼륨은 더블탭에만
+올라오고 1200bps 터치는 평범한 CDC 모드로 들어가기 때문입니다.
 
-The conversion is built into `baramdl` rather than vendored from Microsoft's
-`uf2conv.py`, because the Arduino IDE ships no Python and a post-build step that
-needs one would fail outright on Windows.
+UF2 변환은 마이크로소프트의 `uf2conv.py` 를 가져다 쓰지 않고 `baramdl` 안에
+넣었습니다. 아두이노 IDE 는 파이썬을 함께 배포하지 않으므로, 파이썬이 필요한
+후처리 단계는 윈도우에서 그냥 실패합니다.
 
-Two things about the upload plumbing are worth knowing if you add a board:
+업로드는 242KB 이미지 기준 약 5.5초입니다. 그중 전송이 0.9초이고 나머지는
+QSPI 지우기입니다.
 
-- **Every upload method needs `upload.protocol`.** arduino-cli looks the tool up
-  as `upload.tool.<protocol>`; with no protocol it cannot form the name, never
-  reaches the `upload.tool.default` fallback, and reports "A programmer is
-  required to upload" - the same message it gives for a tool that does not
-  exist, which makes it easy to misread.
-- **The port arduino-cli passes is the one from before the 1200 bps touch.** By
-  the time the tool runs, the board has rebooted and come back under a different
-  name, so `baramdl` treats `--port` as a hint and falls back to finding the
-  bootloader itself.
-- **Carriage-return progress does not work in the IDE console.** It does not
-  interpret `\r` and holds a line until a newline arrives, so a single
-  self-updating line is not possible there: without a newline nothing is
-  flushed, and with one the line is finished. `baramdl` checks whether stdout is
-  a terminal - on one it redraws a bar in place, otherwise it draws a bar per
-  10% down the console.
+보드를 추가하실 때 알아두면 좋은 것 셋입니다.
 
-USB identity, all under [pid.codes](https://pid.codes)' `0x1209`:
+- **업로드 방법마다 `upload.protocol` 이 반드시 있어야 합니다.** arduino-cli 는
+  도구를 `upload.tool.<protocol>` 로 찾는데, protocol 이 없으면 이름을 만들지
+  못하고 `upload.tool.default` 로도 못 갑니다. 그러면 "A programmer is required
+  to upload" 가 뜨는데, **도구 이름이 틀렸을 때와 메시지가 같아서** 오진하기
+  쉽습니다.
+- **arduino-cli 가 넘기는 포트는 1200bps 터치 이전의 것입니다.** 도구가 실행될
+  때쯤이면 보드는 이미 재부팅해서 다른 이름으로 돌아와 있습니다. 그래서
+  `baramdl` 은 `--port` 를 힌트로만 쓰고 USB ID 로 부트로더를 직접 찾습니다.
+  같은 이유로 이 패키지는 `use_1200bps_touch` 와 `wait_for_upload_port` 를
+  꺼둡니다 — 켜두면 arduino-cli 가 아직 열리지 않은 포트를 넘겨 실패합니다.
+- **IDE 콘솔에서는 캐리지리턴 진행률이 동작하지 않습니다.** `\r` 을 해석하지
+  않고 개행이 올 때까지 줄을 붙들고 있어서, 한 줄이 스스로 갱신되는 표시는
+  거기서 불가능합니다. `baramdl` 은 stdout 이 터미널인지 보고, 터미널이면
+  제자리에서 막대를 다시 그리고 아니면 10% 마다 한 줄씩 그립니다.
+
+USB 식별자는 전부 [pid.codes](https://pid.codes) 의 `0x1209` 아래입니다.
 
 | PID | |
 |---|---|
-| `0xB750` | bootloader, CDC + HID |
-| `0xB751` | bootloader, with the UF2 mass storage volume |
-| `0xB752` | the sketch |
+| `0xB750` | 부트로더, CDC + HID |
+| `0xB751` | 부트로더, UF2 대용량 저장 볼륨 포함 |
+| `0xB752` | 스케치 |
+| `0xB753` ~ `0xB755` | HiGenis 그룹 (자리표시자, 같은 역할 배치) |
 
-### Burning the bootloader
+### 부트로더 굽기
 
-The bootloader image ships in `stm32/bootloaders/`. Pick the method under
-*Tools > Programmer*, then *Tools > Burn Bootloader*:
+부트로더 이미지는 `stm32/bootloaders/` 에 들어 있습니다.
+*Tools > Programmer* 에서 방법을 고르고 *Tools > Burn Bootloader* 입니다.
 
-- **USB DFU (STM32 system bootloader)** — hold SW1 (BOOT0), press and release
-  SW3 (NRST), release SW1. The board enumerates as `0483:df11`. Uses the
-  `dfu-util` bundled with STM32Tools, so nothing extra to install.
-- **ST-LINK (SWD)** — works no matter what is in flash, so this is the recovery
-  path.
+- **USB DFU (STM32 시스템 부트로더)** — SW1(BOOT0)을 누른 채 SW3(NRST)를 눌렀다
+  떼고 SW1 을 뗍니다. 보드가 `0483:df11` 로 열거됩니다. STM32Tools 에 함께
+  들어 있는 `dfu-util` 을 쓰므로 따로 설치할 것이 없습니다.
+- **ST-LINK (SWD)** — 플래시에 무엇이 들어 있든 동작하므로 이쪽이 복구 경로입니다.
 
-### The WeActH750 library
+### WeActH750 라이브러리
 
-One object owns the on-board hardware, so a sketch can exercise the board
-without pulling anything else in:
+객체 하나가 보드의 하드웨어를 소유하므로, 외부 라이브러리 없이 보드를 시험할
+수 있습니다.
 
 ```cpp
 #include <WeActH750.h>
@@ -153,8 +149,8 @@ void setup() {
 void loop() {
   if (board.lcd.available()) {
     board.lcd.clear(black);
-    board.lcd.printf(6, 4, white, "안녕하세요");         // UTF-8
-    board.lcd.printfResize(6, 30, green, 32.0f, "BIG"); // 32 px tall
+    board.lcd.printf(6, 4, white, "안녕하세요");        // UTF-8
+    board.lcd.printfResize(6, 30, green, 32.0f, "BIG"); // 높이 32px
     board.lcd.update();
   }
   board.ledToggle();
@@ -163,74 +159,113 @@ void loop() {
 }
 ```
 
-The LCD driver, its fonts and the Korean composer are the bootloader's, copied
-in unchanged - `src/` is laid out as its include root so a file moved between
-the two projects needs no edits. Only `gpio.cpp` and `spi.cpp` are new: they put
-the bootloader's `gpioPinWrite()` and `spiXxx()` on the Arduino platform. A
-sketch therefore draws exactly what the bootloader's splash screen does.
+LCD 드라이버와 폰트, 한글 조합기는 부트로더의 것을 그대로 가져왔습니다.
+`src/` 를 그쪽 include 루트와 같은 배치로 두어서, 두 프로젝트 사이를 오가는
+파일이 수정 없이 옮겨집니다. 새로 쓴 것은 `gpio.cpp` 와 `spi.cpp` 뿐이고,
+부트로더의 `gpioPinWrite()` 와 `spiXxx()` 를 아두이노 위에 올리는 역할입니다.
+그래서 스케치는 부트로더 스플래시 화면과 똑같은 것을 그립니다.
 
-Korean is composed at draw time from initial, medial and final jamo rather than
-stored one bitmap per syllable - there are 11,172 of them - which fits the whole
-language in about 80 KB.
+한글은 음절 하나에 비트맵 하나를 두지 않고 초성·중성·종성을 그릴 때 조합합니다.
+음절이 11,172 개이므로, 조합하면 언어 전체가 약 80KB 에 들어갑니다.
 
-Frames go out over DMA on SPI4, so the 5 ms a 160x80 frame takes on the wire is
-time the sketch can spend on the next one. `board.lcd.available()` is false
-until the previous frame has left.
+프레임은 SPI4 에서 DMA 로 나갑니다. 160x80 한 장이 선로에 실리는 5ms 동안
+스케치는 다음 장을 준비할 수 있고, `board.lcd.available()` 은 이전 프레임이
+다 나갈 때까지 false 입니다.
 
-Examples: `BoardTest`, `LcdHelloWorld`, `LcdHangul`, `SdCard`.
+카메라는 `board.cam` 입니다. 보드의 DVP 헤더에 OV7725 를 물리면 QQVGA
+160x120 RGB565 를 28fps 로 받아 `board.cam.drawTo(board.lcd)` 로 화면에
+올립니다.
 
-### The SD library
+예제: `BoardTest`, `LcdHelloWorld`, `LcdHangul`, `SdCard`, `Camera`.
 
-`#include <SD.h>` gives the standard Arduino SD API - `SD.begin()`, `File`,
-`openNextFile()` - over this board's SDMMC socket in 4-bit mode, with DMA and
-FatFs underneath.
+### SD 라이브러리
 
-It has to be a separate implementation: the standard library talks SPI, which
-these pins cannot do. STM32duino's `STM32SD` does drive SDMMC, but it is GPLv3,
-which would reach into every sketch that opened a file; FatFs is ChaN's
-permissive licence.
+`#include <SD.h>` 로 표준 아두이노 SD API 를 그대로 씁니다 — `SD.begin()`,
+`File`, `openNextFile()`. 아래는 이 보드의 SDMMC 소켓을 4비트 모드로,
+DMA 와 FatFs 로 구동합니다.
 
-`File` derives from `Stream`, so libraries that take a `Stream&` - image
-readers, audio players, JSON parsers - work with files from this card.
+별도 구현일 수밖에 없습니다. 표준 라이브러리는 SPI 로만 이야기하는데 이 핀들은
+SPI 를 못 합니다. STM32duino 의 `STM32SD` 는 SDMMC 를 구동하지만 GPLv3 라
+파일을 여는 모든 스케치에 그 라이선스가 따라붙습니다. FatFs 는 ChaN 의
+관대한 라이선스입니다.
 
-**Not yet working on hardware.** It builds and the API is complete, but a sketch
-that calls `SD.begin()` hangs before USB comes up. Under investigation.
+`File` 이 `Stream` 을 상속하므로 `Stream&` 를 받는 라이브러리 — 이미지 리더,
+오디오 플레이어, JSON 파서 — 가 이 카드의 파일을 그대로 씁니다.
 
-Card detect is not wired: PD4 reaches the socket switch only through solder
-bridge SB2, which is open, so the pin floats. `hw_def.h` assumes a card is
-present and lets `sdInit()` report an empty slot instead.
+**한글 파일명이 동작합니다.** FatFs R0.15 를 UTF-8 모드(`FF_LFN_UNICODE 2`)와
+코드페이지 949 로 씁니다. 소스에 UTF-8 리터럴을 그대로 쓰면 됩니다.
 
-### Pinout
+```cpp
+File f = SD.open("/한글이름.txt", FILE_WRITE);
+```
+
+**exFAT 도 켜져 있습니다.** 64GB 이상 microSD 는 공장에서 exFAT 으로 출하되는데,
+그것 없이는 마운트에 실패해 사용자에게 "카드 없음" 으로만 보입니다.
+
+코드페이지 949 테이블 때문에 SD 를 실제로 쓰는 스케치는 약 136KB 커집니다.
+`--gc-sections` 가 안 쓰는 쪽을 통째로 걷어가므로 SD 를 안 쓰는 스케치는
+영향이 없습니다.
+
+드라이버는 보드마다 갈아끼울 수 있는 구조입니다.
+
+```
+hw/driver/sd.h            sd_driver_t. 블록 주소와 개수만 말하고 버스를 모른다
+hw/driver/sd.c            디스패처
+hw/driver/sd/sd_sdmmc.c   SDMMC 백엔드
+```
+
+소켓이 SPI 인 보드는 `sd/sd_spi.c` 를 두고 `sdSelectDriver()` 에 한 줄 더하면
+되고, 위층은 손대지 않습니다. **SD 소켓이 없는 보드는 `_USE_HW_SD` 를 정의하지
+않으면 됩니다** — 빌드가 되고 플래시를 한 바이트도 쓰지 않습니다.
+
+카드 검출은 배선되어 있지 않습니다. PD4 가 솔더브리지 SB2 를 통해서만 소켓
+스위치에 닿는데 SB2 가 열려 있어 핀이 떠 있습니다. `hw_def.h` 는 카드가 있다고
+가정하고, 빈 슬롯은 `sdInit()` 이 실패하는 것으로 보고합니다.
+
+**알려진 문제:** 디렉터리 순회가 간헐적으로 빈 목록을 돌려줍니다
+(`SdCard.ino` 기준 8회 중 3회). 마운트와 용량은 정상이고 폴트도 나지 않으며,
+읽기와 쓰기는 스트레스 시험에서 326MB 무오류였습니다. 원인 미상입니다.
+
+### 핀맵
 
 ```
 LED          PE3    active HIGH
-Button K1    PC13   pressed reads HIGH; needs an internal pull-down
-Serial       PA9 TX / PA10 RX   (LPUART1; the bootloader uses USART1 on the same pins)
-USB OTG_FS   PA11 DM / PA12 DP  (VBUS is not wired to the MCU)
+버튼 K1      PC13   누르면 HIGH. 내부 풀다운이 필요하다
+Serial       PA9 TX / PA10 RX   (USART1)
+USB OTG_FS   PA11 DM / PA12 DP  (VBUS 는 MCU 에 연결되어 있지 않다)
 QSPI         PB2 CLK, PB6 NCS, PD11 IO0, PD12 IO1, PE2 IO2, PD13 IO3
 LCD (SPI4)   PE12 SCK, PE14 MOSI, PE13 DC, PE11 CS, PE10 BL (active LOW)
 microSD      PC8-PC11 D0-D3, PC12 CK, PD2 CMD  (SDMMC1)
+카메라(DCMI) PC6/PC7/PE0/PE1/PE4/PE5/PE6/PD3 D0-D7, PB7 VSYNC,
+             PA4 HSYNC, PA6 PIXCLK, PA8 XCLK(MCO1), PB8/PB9 SCCB
 SWD          PA13 / PA14
 ```
 
-## Releasing
+## 배포
 
 ```sh
-extras/make_release.sh 0.1.0 --dry-run   # build the archive, update the index
-extras/make_release.sh 0.1.0             # and upload it to a GitHub release
+extras/make_release.sh 0.1.0 --dry-run   # 아카이브를 만들고 인덱스를 갱신
+extras/make_release.sh 0.1.0             # GitHub 릴리스로 업로드까지
 ```
 
-It keeps `stm32/platform.txt`'s version and the index entry in step, then you
-commit and push `package_baram_stm32_index.json`.
+`stm32/platform.txt` 의 버전과 인덱스 항목을 맞춰 주고, 그다음
+`package_baram_stm32_index.json` 을 커밋해 푸시하면 됩니다.
 
-## Related
+번들된 부트로더의 README 표는 바이너리에서 직접 만듭니다.
 
-- Bootloader firmware: `weact-h750-mini` (separate repository). `firm_ver_t` in
-  `variant_WEACT_H750_MINI.cpp` must stay byte-identical to the one in its
-  `src/common/def.h`.
-- Upstream core: [stm32duino/Arduino_Core_STM32](https://github.com/stm32duino/Arduino_Core_STM32)
+```sh
+extras/sync_bootloader_readme.py
+```
 
-## License
+## 관련 저장소
 
-The core, variants and system files keep their original licenses; see
-`stm32/License.md`.
+- **부트로더 펌웨어: [chcbaram/weact-h750-mini](https://github.com/chcbaram/weact-h750-mini)**
+  — 이 보드의 부트로더와 앱 펌웨어. `variant_WEACT_H750_MINI.cpp` 의
+  `firm_ver_t` 는 그쪽 `src/common/def.h` 의 것과 바이트 단위로 같아야 합니다.
+  메모리 맵, VTOR, QSPI 클럭, UF2 규약이 전부 두 저장소에 걸쳐 있습니다.
+- 상위 코어: [stm32duino/Arduino_Core_STM32](https://github.com/stm32duino/Arduino_Core_STM32)
+
+## 라이선스
+
+코어와 variant, system 파일은 원래 라이선스를 그대로 따릅니다.
+`stm32/License.md` 를 보십시오.
