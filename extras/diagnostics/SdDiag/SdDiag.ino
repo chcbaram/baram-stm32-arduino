@@ -156,14 +156,19 @@ void setup()
 {
   board.begin(115200);
 
-  reportClocks();
-
-  // Let the driver configure pins and the peripheral. It is expected to fail
-  // when no card answers; what matters is the state it leaves behind.
+  // Everything below reads registers the driver owns, so let it run first.
+  // Reading the clock tree before this would report SDMMC1EN=0 and look like a
+  // fault when it only means nothing has enabled the peripheral yet.
   bool ok = sdInit();
-  logf("\nsdInit()=%s  ErrorCode=0x%08lX   POWER=0x%08lX CLKCR=0x%08lX\n",
+  logf("sdInit()=%s  ErrorCode=0x%08lX   POWER=0x%08lX CLKCR=0x%08lX\n",
        ok ? "OK" : "FAIL", (unsigned long)sdGetLastError(),
        (unsigned long)SDMMC1->POWER, (unsigned long)SDMMC1->CLKCR);
+  // CLKCR carries the answer on its own: the driver's own divider (a fast
+  // transfer clock) means identification succeeded, because the HAL only
+  // applies it at the end. The ~400 kHz identification divider means it did not.
+  logf("\n");
+
+  reportClocks();
 
   logf("\npins (expect mode=AF af=12 speed=3 pupd=1)\n");
   dumpPin("PC8  D0",  GPIOC, 8);
