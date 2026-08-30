@@ -31,6 +31,16 @@ bool i2cIsInit(uint8_t ch);
 // "module present but not answering", which is worth separating in a sketch.
 bool i2cIsDeviceReady(uint8_t ch, uint16_t dev_addr);
 
+// Walks the 7 bit address space and reports what answers, up to max_found
+// entries. Tells "the sensor is at a different address" apart from "nothing is
+// on this bus at all", which the single-address probe above cannot.
+uint8_t i2cScan(uint8_t ch, uint8_t *p_found, uint8_t max_found);
+
+// The idle levels of SDA and SCL, read as plain inputs before the peripheral
+// takes the pins. Both should be high: the module carries the pull-ups. A low
+// line means no pull-up, nothing plugged in, or a device holding the bus.
+void i2cBusLevels(uint8_t ch, bool *p_sda, bool *p_scl);
+
 /*
  * Read and write one register.
  *

@@ -277,8 +277,10 @@ File File::openNextFile(uint8_t mode)
   snprintf(path, sizeof(path), "%s%s%s", at_root ? "/" : _path,
            at_root ? "" : "/", info.fname);
   // FatFs hands back UTF-8 now, so a name with Hangul in it costs three bytes
-  // per character. snprintf truncates rather than overruns; _path is 256, which
-  // is about 85 characters.
+  // per character. snprintf truncates rather than overruns, but a truncated
+  // path is a wrong path: the child open below then fails. 256 bytes holds a
+  // directory path plus about 85 Hangul characters of name, which is where the
+  // limit bites - not on any ordinary card layout.
 
   return SD.open(path, mode);
 }

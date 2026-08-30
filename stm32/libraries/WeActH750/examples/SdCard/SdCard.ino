@@ -15,7 +15,9 @@
 
 static bool  mounted  = false;
 static char  status[64];
-static char  entries[4][32];
+// Names come back as UTF-8 now, so Hangul costs three bytes a character.
+// 64 holds about 20 of them, which is more than the 160 pixel panel shows.
+static char  entries[4][64];
 static int   entry_count = 0;
 
 void setup()

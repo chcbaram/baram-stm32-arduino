@@ -57,6 +57,35 @@ bool i2cIsDeviceReady(uint8_t ch, uint16_t dev_addr)
   return cam_wire.endTransmission(true) == 0;
 }
 
+uint8_t i2cScan(uint8_t ch, uint8_t *p_found, uint8_t max_found)
+{
+  uint8_t n = 0;
+
+  if (ch != _DEF_I2C1 || is_init == false || p_found == nullptr) return 0;
+
+  // 0x00-0x07 and 0x78-0x7F are reserved by the I2C specification.
+  for (uint8_t addr = 0x08; addr <= 0x77 && n < max_found; addr++)
+  {
+    cam_wire.beginTransmission(addr);
+    if (cam_wire.endTransmission(true) == 0)
+    {
+      p_found[n++] = addr;
+    }
+  }
+  return n;
+}
+
+void i2cBusLevels(uint8_t ch, bool *p_sda, bool *p_scl)
+{
+  if (ch != _DEF_I2C1) return;
+
+  // Read the pads directly. Wire has already claimed them as open drain
+  // alternate function, and in that state the input buffer still follows the
+  // line, so this reports what the bus is actually sitting at.
+  if (p_sda) *p_sda = (digitalReadFast(digitalPinToPinName(HW_CAMERA_I2C_SDA)) == HIGH);
+  if (p_scl) *p_scl = (digitalReadFast(digitalPinToPinName(HW_CAMERA_I2C_SCL)) == HIGH);
+}
+
 /*
  * timeout is accepted and not used.
  *

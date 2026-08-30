@@ -11,6 +11,7 @@
 #include "hw/driver/camera.h"
 #include "hw/driver/i2c.h"
 #include "hw/driver/ov7725.h"
+#include "hw/driver/ov2640.h"
 
 #ifdef _USE_HW_CAMERA
 
@@ -111,6 +112,37 @@ static bool cameraXclkStart(void)
   return true;
 }
 
+/*
+ * Brings up the clock and the bus, then finds out what is plugged in.
+ *
+ * Which sensors can be found is a compile time choice in hw_def.h; which one is
+ * actually there is a run time answer. The board's own module carries an
+ * OV2640, but the manufacturer also sells an OV7725 board for the same header,
+ * so both are probed rather than assumed - a mismatch would otherwise look
+ * exactly like a missing camera.
+ */
+typedef struct
+{
+  uint8_t     slv_addr;
+  uint8_t     id_reg;
+  uint8_t     expect_id;
+  const char *name;
+  bool      (*init)(void);
+  bool      (*open)(camera_t *sensor);
+} camera_probe_t;
+
+static const camera_probe_t camera_probe[] = {
+#ifdef _USE_HW_OV2640
+  // The id lives in a banked register set; reset() gets to it. Reading 0x0A
+  // straight out of a cold OV2640 happens to return the same 0x26, which is
+  // enough to tell it apart from an OV7725 at a different address anyway.
+  { OV2640_SLV_ADDR, OV_CHIP_ID, OV2640_ID, "OV2640", ov2640Init, ov2640Open },
+#endif
+#ifdef _USE_HW_OV7725
+  { OV7725_SLV_ADDR, OV_CHIP_ID, OV7725_ID, "OV7725", ov7725Init, ov7725Open },
+#endif
+};
+
 bool cameraInit(void)
 {
   if (cameraXclkStart() != true)
@@ -119,58 +151,47 @@ bool cameraInit(void)
     return false;
   }
 
-  // Opens the SCCB bus. The sensor needs a few thousand XCLK cycles after the
-  // clock appears before it answers, which at 12 MHz is well under a
-  // millisecond - the delay is generous rather than measured.
-  ov7725Init();
-  delay(10);
-
-  if (i2cIsDeviceReady(i2c_ch, OV7725_SLV_ADDR) == true)
+  for (uint32_t i = 0; i < sizeof(camera_probe) / sizeof(camera_probe[0]); i++)
   {
-    sensor.slv_addr = OV7725_SLV_ADDR;
+    const camera_probe_t *p_probe = &camera_probe[i];
 
-    // Clear sensor chip ID.
-    sensor.chip_id = 0;
+    // Opens the SCCB bus. The sensor needs a few thousand XCLK cycles after the
+    // clock appears before it answers, which at 12 MHz is well under a
+    // millisecond - the delay is generous rather than measured. Without it the
+    // probe below reports no camera on a camera that is simply not awake yet.
+    p_probe->init();
+    delay(10);
 
-    if (i2cReadByte2(i2c_ch, sensor.slv_addr, OV_CHIP_ID, &sensor.chip_id, 100) == true)
+    if (i2cIsDeviceReady(i2c_ch, p_probe->slv_addr) != true)
     {
-      logPrintf("OV7725 CHIP_ID \t\t: 0x%X\n", sensor.chip_id);
-    }
-    else
-    {
-      logPrintf("OV7725 CHIP_ID \t\t: Fail\n");
-      return false;
-    }
-
-
-    if (ov7725Open(&sensor) == true)
-    {
-      logPrintf("OV7725 Open \t\t: OK\n");
-    }
-    else
-    {
-      logPrintf("OV7725 Open \t\t: Fail\n");
-      return false;
+      continue;
     }
 
+    sensor.slv_addr = p_probe->slv_addr;
+    sensor.chip_id  = 0;
+
+    if (i2cReadByte2(i2c_ch, sensor.slv_addr, p_probe->id_reg, &sensor.chip_id, 100) != true)
+    {
+      logPrintf("%s CHIP_ID \t\t: Fail\n", p_probe->name);
+      continue;
+    }
+    logPrintf("%s CHIP_ID \t\t: 0x%X\n", p_probe->name, sensor.chip_id);
+
+    if (p_probe->open(&sensor) != true)
+    {
+      logPrintf("%s Open \t\t: Fail\n", p_probe->name);
+      continue;
+    }
 
     cameraReset();
     cameraSetPixformat(PIXFORMAT_RGB565);
-    cameraSetFramesize(FRAMESIZE_HQVGA);
-    //cameraSetFramesize(FRAMESIZE_QVGA);
-
-    //sensor.set_auto_exposure(&sensor, false, 2000);
-
+    cameraSetFramesize(FRAMESIZE_QVGA);
 
     is_init = true;
-  }
-  else
-  {
-    return false;
+    return true;
   }
 
-
-  return true;
+  return false;
 }
 
 /*

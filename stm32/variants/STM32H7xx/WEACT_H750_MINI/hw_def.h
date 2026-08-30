@@ -141,6 +141,16 @@ extern "C" {
  * (PE11-PE14) and USB on PA11/PA12.
  */
 #define _USE_HW_CAMERA
+
+/*
+ * Which sensor drivers are compiled in. Both are probed at run time and the
+ * one that answers is used, so leaving both on costs only flash.
+ *
+ * The module that ships with this board is an OV2640 (SCCB 0x30, id 0x26).
+ * The manufacturer also sells an OV7725 board for the same header, which is
+ * why that driver stays.
+ */
+#define _USE_HW_OV2640
 #define _USE_HW_OV7725
 
 #define HW_CAMERA_WIDTH           320
