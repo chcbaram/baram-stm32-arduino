@@ -15,9 +15,6 @@ static uint8_t i2c_ch = _DEF_I2C1;
  */
 static camera_t *p_sensor = NULL;
 
-// Reported by the example so the doubler's state is visible from a sketch.
-uint8_t ov2640_clkrc_before = 0;
-uint8_t ov2640_clkrc_after  = 0;
 #define hcamera (*p_sensor)
 
 #define OV2640_XCLK_FREQUENCY       (HW_CAMERA_XCLK_HZ)
@@ -615,9 +612,7 @@ static int ov2640_reset(camera_t *sensor)
    * MCO1, which does not help here; clearing the doubler addresses the cause.
    */
   OV2640_WR_Reg(BANK_SEL, BANK_SEL_SENSOR);
-  ov2640_clkrc_before = OV2640_RD_Reg(CLKRC);
-  OV2640_WR_Reg(CLKRC, ov2640_clkrc_before & (uint8_t)~CLKRC_DOUBLE);
-  ov2640_clkrc_after = OV2640_RD_Reg(CLKRC);
+  OV2640_WR_Reg(CLKRC, OV2640_RD_Reg(CLKRC) & (uint8_t)~CLKRC_DOUBLE);
 
   /*
    * Hand exposure, gain and white balance to the sensor.

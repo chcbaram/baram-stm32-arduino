@@ -22,22 +22,28 @@ static DCMI_HandleTypeDef  hcamera_dcmi;
 static bool is_init = false;
 static bool is_requested = false;
 
+// Frames the DCMI has completed. Not a debugging aid - cameraGetFrameCount()
+// and board.cam.fps() are built on it.
+static uint32_t frame_count = 0;
+
 /*
  * State captured at the instant the DCMI reports an error.
  *
- * Everything interesting is scrubbed immediately afterwards - the HAL clears
- * the DCMI flags, and its abort turns the stream's interrupts off and
- * overwrites the DMA error code with "no transfer ongoing". Reading these
- * registers from a sketch afterwards therefore shows a tidy, uninformative
- * corpse. Snapshotting them here is the only way to see what the stream was
- * actually doing when it stopped.
+ * Off by default; set HW_CAMERA_DEBUG in hw_def.h to keep it. Everything worth
+ * seeing is scrubbed immediately afterwards - the HAL clears the DCMI flags,
+ * and its abort turns the stream's interrupts off and overwrites the DMA error
+ * code with "no transfer ongoing" - so reading these registers from a sketch
+ * later shows a tidy and uninformative corpse. Snapshotting them in the handler
+ * is the only way to see what the stream was actually doing when it stopped,
+ * and it is what showed that the DMA stops first and the overrun follows.
  */
-uint32_t dbg_frame_cnt = 0;
+#if HW_CAMERA_DEBUG == 1
 uint32_t dbg_err_cnt   = 0;
 uint32_t dbg_err_lisr  = 0;
 uint32_t dbg_err_s0cr  = 0;
 uint32_t dbg_err_ndtr  = 0;
 uint32_t dbg_err_ris   = 0;
+#endif
 
 // What the last cameraStart() was given, so an error can re-arm the same
 // capture without the caller having to notice anything happened.
@@ -498,7 +504,7 @@ void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err)
  */
 uint32_t cameraGetFrameCount(void)
 {
-  return dbg_frame_cnt;
+  return frame_count;
 }
 
 int cameraSetHmirror(int enable)
@@ -813,7 +819,7 @@ void HAL_DCMI_FrameEventCallback(DCMI_HandleTypeDef *hdcmi)
   logPrintf("%d ms,  %d fps\n", time, fps);
   pre_time = millis();
 
-  dbg_frame_cnt++;
+  frame_count++;
   is_requested = false;
   //BSP_CAMERA_FrameEventCallback(0);
 }
@@ -844,11 +850,13 @@ void HAL_DCMI_ErrorCallback(DCMI_HandleTypeDef *hdcmi)
    * "no transfer ongoing", so reading any of this from a sketch afterwards
    * shows a tidy and uninformative corpse.
    */
+#if HW_CAMERA_DEBUG == 1
   dbg_err_cnt++;
   dbg_err_lisr = DMA1->LISR;
   dbg_err_s0cr = HW_CAMERA_DMA_STREAM->CR;
   dbg_err_ndtr = HW_CAMERA_DMA_STREAM->NDTR;
   dbg_err_ris  = DCMI->RISR;
+#endif
 
   /*
    * Then re-arm.

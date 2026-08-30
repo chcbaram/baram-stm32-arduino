@@ -143,6 +143,14 @@ extern "C" {
 #define _USE_HW_CAMERA
 
 /*
+ * Keeps the driver's error snapshot: the DMA and DCMI state at the instant a
+ * capture error is reported, which the HAL has scrubbed by the time a sketch
+ * could look. Costs a handful of register reads inside the error interrupt and
+ * a few words of RAM, and is worth turning on when a capture misbehaves.
+ */
+#define HW_CAMERA_DEBUG           0
+
+/*
  * Which sensor drivers are compiled in. Both are probed at run time and the
  * one that answers is used, so leaving both on costs only flash.
  *

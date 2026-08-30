@@ -68,6 +68,17 @@ void loop()
     board.lcd.update();
   }
 
-  board.ledToggle();
-  delay(10);
+  /*
+   * The LED is a heartbeat, not a frame counter.
+   *
+   * Toggling it once per pass blinked it at the frame rate, which reads as
+   * permanently half-lit. Half a second is slow enough to see, and driving it
+   * from millis() rather than from a delay keeps the loop free to draw as fast
+   * as the panel allows.
+   */
+  static uint32_t led_time = 0;
+  if (millis() - led_time >= 500) {
+    led_time = millis();
+    board.ledToggle();
+  }
 }
