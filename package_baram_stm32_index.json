@@ -63,6 +63,61 @@
               "version": "1.20.0"
             }
           ]
+        },
+        {
+          "name": "BARAM STM32 Boards",
+          "architecture": "stm32",
+          "version": "0.1.1",
+          "category": "Contributed",
+          "url": "https://github.com/chcbaram/baram-stm32-arduino/releases/download/0.1.1/baram-stm32-0.1.1.tar.bz2",
+          "archiveFileName": "baram-stm32-0.1.1.tar.bz2",
+          "checksum": "SHA-256:599046926985BC4CA1AC52372B8837D53FA6D043C0AAE677A3A4D66A8371601F",
+          "size": "7052127",
+          "help": {
+            "online": "https://github.com/chcbaram/baram-stm32-arduino"
+          },
+          "boards": [
+            {
+              "name": "WEACT-H750-MINI"
+            }
+          ],
+          "toolsDependencies": [
+            {
+              "packager": "STMicroelectronics",
+              "name": "xpack-arm-none-eabi-gcc",
+              "version": "14.2.1-1.1"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "xpack-openocd",
+              "version": "0.12.0-6"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "STM32Tools",
+              "version": "2.4.0"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "CMSIS",
+              "version": "6.2.0"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "CMSIS_DSP",
+              "version": "1.16.2"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "CMSIS_NN",
+              "version": "7.0.0"
+            },
+            {
+              "packager": "STMicroelectronics",
+              "name": "STM32_SVD",
+              "version": "1.20.0"
+            }
+          ]
         }
       ],
       "tools": []
