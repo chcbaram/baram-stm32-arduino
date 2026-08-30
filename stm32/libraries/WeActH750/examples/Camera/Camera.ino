@@ -30,12 +30,12 @@ void setup()
   }
 
   /*
-   * The module sits above the panel and points the same way the panel faces, so
-   * what it sees is mirrored relative to what someone looking at the screen
-   * expects. Mirroring in the sensor costs nothing; doing it in the copy would
-   * cost a reversed read on every row.
+   * Orientation is left alone here: the module on this board already faces the
+   * same way as the panel, so what it captures is what someone looking at the
+   * screen expects. board.cam.mirror() and board.cam.flip() are there for a
+   * module mounted the other way round, and both are done in the sensor - a
+   * reversed read on every row would cost far more.
    */
-  board.cam.mirror(true);
 }
 
 void loop()
