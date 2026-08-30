@@ -184,7 +184,7 @@ extern "C" {
  * that later retunes it moves the sensor's clock with it, silently. HSI48 keeps
  * the camera independent of the rest of the clock tree.
  */
-#define HW_CAMERA_XCLK_HZ         12000000
+#define HW_CAMERA_XCLK_HZ         24000000
 #define HW_CAMERA_XCLK_PORT       GPIOA
 #define HW_CAMERA_XCLK_PIN        GPIO_PIN_8
 #define HW_CAMERA_XCLK_CLK_ENABLE()  __HAL_RCC_GPIOA_CLK_ENABLE()
@@ -216,7 +216,7 @@ extern "C" {
 
 /* The MCO1 route, kept for a sensor that is happy with it. */
 #define HW_CAMERA_MCO_SOURCE      RCC_MCO1SOURCE_HSI48
-#define HW_CAMERA_MCO_DIV         RCC_MCODIV_4
+#define HW_CAMERA_MCO_DIV         RCC_MCODIV_2
 #define HW_CAMERA_XCLK_AF         GPIO_AF0_MCO
 
 /* Data and sync, all AF13, spread over four ports. */
