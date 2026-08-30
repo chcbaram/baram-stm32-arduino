@@ -250,6 +250,10 @@
 #if !defined(HAL_DAC_MODULE_DISABLED)
   #define HAL_DAC_MODULE_ENABLED
 #endif
+// The camera header is wired to DCMI; see the camera section of hw_def.h.
+#if !defined(HAL_DCMI_MODULE_DISABLED)
+  #define HAL_DCMI_MODULE_ENABLED
+#endif
 // #if !defined(HAL_ETH_MODULE_DISABLED)
 //   #define HAL_ETH_MODULE_ENABLED
 // #endif

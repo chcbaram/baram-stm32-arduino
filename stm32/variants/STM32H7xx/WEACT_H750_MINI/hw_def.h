@@ -129,6 +129,94 @@ extern "C" {
 // Selects the 160x80 panel's offsets (col 1, row 26) and inverted colour mode.
 #define HW_ST7735_MODEL   0
 
+/*
+ * DVP camera, on the board's camera header.
+ *
+ * Nothing here is a choice. The header is wired to DCMI in 8 bit mode, the
+ * sensor's master clock comes out of MCO1 on PA8 and its SCCB bus is I2C1 -
+ * all fixed by the board, and all already named in the variant's pin table.
+ *
+ * None of it collides with anything else on the board: the SD socket is on
+ * PC8-PC12 and PD2, QSPI on PB2/PB6/PD11-PD13/PE2, the panel on SPI4
+ * (PE11-PE14) and USB on PA11/PA12.
+ */
+#define _USE_HW_CAMERA
+#define _USE_HW_OV7725
+
+#define HW_CAMERA_WIDTH           320
+#define HW_CAMERA_HEIGHT          240
+
+/*
+ * The sensor's master clock, out of MCO1.
+ *
+ * HSI48 divided by 4 is 12 MHz, which is what the manufacturer's own DCMI
+ * example uses and what ov7725.c's exposure arithmetic assumes
+ * (OMV_XCLK_FREQUENCY). HSI48 is off by the time a sketch runs - SystemInit()
+ * clears HSI48ON and the variant's clock setup only turns HSE back on, because
+ * USB takes its 48 MHz from PLL1Q - so cameraInit() enables it.
+ *
+ * PLL1Q would also give 12 MHz for free, but it is the system PLL: anything
+ * that later retunes it moves the sensor's clock with it, silently. HSI48 keeps
+ * the camera independent of the rest of the clock tree.
+ */
+#define HW_CAMERA_XCLK_HZ         12000000
+#define HW_CAMERA_MCO_SOURCE      RCC_MCO1SOURCE_HSI48
+#define HW_CAMERA_MCO_DIV         RCC_MCODIV_4
+#define HW_CAMERA_XCLK_PORT       GPIOA
+#define HW_CAMERA_XCLK_PIN        GPIO_PIN_8
+#define HW_CAMERA_XCLK_AF         GPIO_AF0_MCO
+#define HW_CAMERA_XCLK_CLK_ENABLE()  __HAL_RCC_GPIOA_CLK_ENABLE()
+
+/* Data and sync, all AF13, spread over four ports. */
+#define HW_CAMERA_AF              GPIO_AF13_DCMI
+
+#define HW_CAMERA_PORTA_PINS      (GPIO_PIN_4 | GPIO_PIN_6)   /* HSYNC, PIXCLK */
+#define HW_CAMERA_PORTB_PINS      (GPIO_PIN_7)                /* VSYNC         */
+#define HW_CAMERA_PORTC_PINS      (GPIO_PIN_6 | GPIO_PIN_7)   /* D0, D1        */
+#define HW_CAMERA_PORTD_PINS      (GPIO_PIN_3)                /* D5            */
+#define HW_CAMERA_PORTE_PINS      (GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_4 \
+                                   | GPIO_PIN_5 | GPIO_PIN_6) /* D2,D3,D4,D6,D7 */
+
+/*
+ * Sync polarities, from the manufacturer's example for this board and the
+ * OV7725 module that ships with it. Another reference driver for the same
+ * sensor uses VSYNC active high; on this board that captures nothing.
+ */
+#define HW_CAMERA_VS_POLARITY     DCMI_VSPOLARITY_LOW
+#define HW_CAMERA_HS_POLARITY     DCMI_HSPOLARITY_LOW
+#define HW_CAMERA_PCK_POLARITY    DCMI_PCKPOLARITY_RISING
+
+/*
+ * DMA1 stream 0. Stream 1 is the panel's (SPI4 TX, see spi.cpp) and SDMMC uses
+ * its own IDMA rather than a stream, so nothing else on this board competes.
+ */
+#define HW_CAMERA_DMA_STREAM      DMA1_Stream0
+#define HW_CAMERA_DMA_IRQn        DMA1_Stream0_IRQn
+#define HW_CAMERA_DMA_IRQHandler  DMA1_Stream0_IRQHandler
+#define HW_CAMERA_DMA_REQUEST     DMA_REQUEST_DCMI
+
+/*
+ * SCCB. The camera header's I2C1 is a different peripheral from the pins Wire
+ * defaults to (PB10/PB11 are I2C2), so a sketch can keep using Wire for its own
+ * devices without touching the sensor.
+ */
+#define HW_CAMERA_I2C_SDA         PB9
+#define HW_CAMERA_I2C_SCL         PB8
+#define HW_CAMERA_I2C_FREQ        400000
+
+/*
+ * Power down reaches PA7 only through solder bridge SB1, which is open as the
+ * board ships - the same situation as the card detect line above. The sensor is
+ * therefore always powered; closing SB1 makes it controllable.
+ */
+#define HW_CAMERA_PWDN_NONE
+
+#if 0
+#define HW_CAMERA_PWDN_PORT       GPIOA
+#define HW_CAMERA_PWDN_PIN        GPIO_PIN_7
+#define HW_CAMERA_PWDN_CLK_ENABLE()  __HAL_RCC_GPIOA_CLK_ENABLE()
+#endif
+
 // GpioPinName_t in the bootloader. Only the LCD pins matter here, and the
 // numbering has to match the table in gpio_shim.c.
 typedef enum {
