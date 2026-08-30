@@ -35,7 +35,6 @@ typedef struct
 
 bool sdInit(void);
 bool sdDeInit(void);
-void sdTest(void);
 
 bool sdReadBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
 bool sdWriteBlocks(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
@@ -48,7 +47,7 @@ bool sdGetInfo(sd_info_t *p_info);
 uint32_t sdGetLastError(void);
 
 
-#endif /* _USE_HW_LED */
+#endif /* _USE_HW_SD */
 
 #ifdef __cplusplus
 }

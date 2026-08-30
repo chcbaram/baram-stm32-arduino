@@ -55,15 +55,14 @@ extern "C" {
 
 // microSD on SDMMC1, 4 bit wide.
 #define _USE_HW_SD
-#define _USE_HW_FATFS
 
 /*
  * Which SDMMC block and which pins. The driver reads these rather than naming
  * pins itself, so a board that wires the socket differently only edits this
  * file - the same rule the rest of hw_def.h follows.
  *
- * All six pins are AF12 on this part. D0-D3 are PC8-PC11, CK is PC12 and CMD is
- * PD2.
+ * All six pins are AF12 on this part. D0-D3 are PC8-PC11 and CK is PC12, which
+ * share a port and are configured together as the bus group; CMD is PD2.
  */
 #define HW_SD_INSTANCE            SDMMC1
 #define HW_SD_IRQn                SDMMC1_IRQn
@@ -74,19 +73,28 @@ extern "C" {
 #define HW_SD_RELEASE_RESET()     __HAL_RCC_SDMMC1_RELEASE_RESET()
 #define HW_SD_AF                  GPIO_AF12_SDIO1
 
-#define HW_SD_DATA_PORT           GPIOC
-#define HW_SD_DATA_PINS           (GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12)
-#define HW_SD_DATA_CLK_ENABLE()   __HAL_RCC_GPIOC_CLK_ENABLE()
+#define HW_SD_BUS_PORT            GPIOC
+#define HW_SD_BUS_PINS            (GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12)  // D0-D3 + CK
+#define HW_SD_BUS_CLK_ENABLE()    __HAL_RCC_GPIOC_CLK_ENABLE()
 
 #define HW_SD_CMD_PORT            GPIOD
 #define HW_SD_CMD_PINS            (GPIO_PIN_2)
 #define HW_SD_CMD_CLK_ENABLE()    __HAL_RCC_GPIOD_CLK_ENABLE()
 
-// SDMMC_CK = sdmmc_ker_ck / (2 * CLKDIV), and the kernel is PLL1Q at 48 MHz.
-// 1 gives 24 MHz, just under the 25 MHz ceiling for default speed. Going faster
-// needs CMD6 to put the card in high speed mode first, which the HAL does not
-// do on its own. The HAL's own SDMMC_HSPEED_CLK_DIV is 2, written for a 200 MHz
-// kernel where it lands on 50 MHz; here it would only give 12 MHz.
+/*
+ * SDMMC_CK = sdmmc_ker_ck / (2 * CLKDIV). The kernel is PLL1Q at 48 MHz, so 1
+ * gives 24 MHz, just under the 25 MHz ceiling for default speed.
+ *
+ * The HAL's own SDMMC_HSPEED_CLK_DIV is 2, written for a 200 MHz kernel where
+ * it lands on 50 MHz; here it would only give 12 MHz.
+ *
+ * 50 MHz would need two things, not one. The card has to be switched to high
+ * speed with CMD6 - the HAL will do that through
+ * HAL_SD_ConfigSpeedBusOperation() - and the kernel clock has to be fast enough
+ * to divide down to it. This variant points SDMMC at PLL1Q, which USB also
+ * uses and so is pinned at 48 MHz; reaching 50 MHz means moving SDMMC to PLL2R
+ * in SystemClock_Config() first.
+ */
 #define HW_SD_CLK_DIV     1
 
 /*

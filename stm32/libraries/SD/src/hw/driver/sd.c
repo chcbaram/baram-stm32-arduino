@@ -51,10 +51,6 @@ static bool sdFail(void);
 static bool sdReadDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
 static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms);
 
-#if HW_SD_USE_CMDIF == 1
-void sdCmdifInit(void);
-void sdCmdif(void);
-#endif
 
 
 
@@ -103,15 +99,6 @@ bool sdInit(void)
   is_init = true;
 
 
-#if HW_SD_USE_CMDIF == 1
-  static bool is_cmd_init = false;
-
-  if (is_cmd_init == false)
-  {
-    sdCmdifInit();
-    is_cmd_init = true;
-  }
-#endif
 
   return is_init;
 }
@@ -128,9 +115,8 @@ bool sdDeInit(void)
     ret = false;
   }
 
-  HAL_NVIC_DisableIRQ(HW_SD_IRQn);
-  HW_SD_CLK_DISABLE();
-
+  // HAL_SD_DeInit calls MspDeInit, which already released the clock, the pins
+  // and the interrupt.
   is_init = false;
 
   return ret;
@@ -194,6 +180,7 @@ bool sdEraseBlocks(uint32_t start_addr, uint32_t end_addr)
 {
   bool ret = false;
 
+  if (is_init == false) return false;
 
   if(HAL_SD_Erase(&uSdHandle, start_addr, end_addr) == HAL_OK)
   {
@@ -327,7 +314,7 @@ void HAL_SD_MspInit(SD_HandleTypeDef *hsd)
    * socket differently does not need this file changed. */
   HW_SD_CLK_ENABLE();
 
-  HW_SD_DATA_CLK_ENABLE();
+  HW_SD_BUS_CLK_ENABLE();
   HW_SD_CMD_CLK_ENABLE();
 
   gpio_init_structure.Mode      = GPIO_MODE_AF_PP;
@@ -335,8 +322,8 @@ void HAL_SD_MspInit(SD_HandleTypeDef *hsd)
   gpio_init_structure.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
   gpio_init_structure.Alternate = HW_SD_AF;
 
-  gpio_init_structure.Pin = HW_SD_DATA_PINS;
-  HAL_GPIO_Init(HW_SD_DATA_PORT, &gpio_init_structure);
+  gpio_init_structure.Pin = HW_SD_BUS_PINS;
+  HAL_GPIO_Init(HW_SD_BUS_PORT, &gpio_init_structure);
 
   gpio_init_structure.Pin = HW_SD_CMD_PINS;
   HAL_GPIO_Init(HW_SD_CMD_PORT, &gpio_init_structure);
@@ -347,26 +334,15 @@ void HAL_SD_MspInit(SD_HandleTypeDef *hsd)
 
 void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
 {
-
   if (sdHandle->Instance == HW_SD_INSTANCE)
   {
-    /* Peripheral clock disable */
     HW_SD_CLK_DISABLE();
 
-    /**SDMMC1 GPIO Configuration
-    PC10     ------> SDMMC1_D2
-    PC11     ------> SDMMC1_D3
-    PC12     ------> SDMMC1_CK
-    PD2     ------> SDMMC1_CMD
-    PC8     ------> SDMMC1_D0
-    PC9     ------> SDMMC1_D1
-    */
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_8
-                          |GPIO_PIN_9);
+    // Same macros MspInit uses. Naming the pins here again is what makes a
+    // second board release the wrong ones.
+    HAL_GPIO_DeInit(HW_SD_BUS_PORT, HW_SD_BUS_PINS);
+    HAL_GPIO_DeInit(HW_SD_CMD_PORT, HW_SD_CMD_PINS);
 
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
-
-    /* SDMMC1 interrupt Deinit */
     HAL_NVIC_DisableIRQ(HW_SD_IRQn);
   }
 }
@@ -378,33 +354,33 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
 /*
  * Cache maintenance around DMA.
  *
- * The core turns the D-cache on, and the SDMMC's internal DMA writes straight
- * to memory. Without invalidating after a read the CPU keeps serving stale
- * cache lines; without cleaning before a write the card gets stale memory.
+ * The core turns the D-cache on and the SDMMC's own DMA writes straight to
+ * memory, so a read has to be invalidated afterwards or the CPU keeps serving
+ * stale lines.
  *
- * The unit is a whole 32-byte line and there is no way around that. CMSIS
- * rounds to lines itself - SCB_InvalidateDCache_by_Addr adds the misalignment
- * to the length and walks from the unaligned address, so DCIMVAC lands on the
- * line containing it either way. Passing an exact range buys nothing.
+ * What the cache does NOT do here is lose a neighbour's data. An earlier
+ * version of this comment claimed it did - that invalidating a line-rounded
+ * range threw away dirty bytes belonging to whatever sat beside the buffer.
+ * That was wrong. Read from the running target:
  *
- * That matters because invalidating discards a dirty line rather than writing
- * it back. Any neighbour sharing a line with the buffer loses whatever it had
- * just written. It happened here: FatFs's 512-byte window sat directly in front
- * of the SDMMC handle, so invalidating after a read threw away the handle's
- * Instance and Init fields that sdInit() had set moments earlier, and every
- * later HAL call went through a NULL Instance.
+ *   MPU_CTRL 0x00000005          enabled, background map for privileged
+ *   R1 RBAR  0x24000001          AXI SRAM at 0x24000000
+ *   R1 RASR  0x13020025          XN=1 AP=3 TEX=000 S=0 C=1 B=0, 512K
  *
- * So the buffer handed to DMA must not share a line with anything else. A
- * caller's buffer that is already line aligned is used directly; anything else
- * goes through a bounce buffer that is aligned by construction. Transfers are
- * always whole 512-byte sectors, so only the start address can be misaligned.
- * uSdHandle and the FATFS object are aligned too, which keeps them out of a
- * shared line no matter what a future caller does.
+ * TEX=000 C=1 B=0 is Normal, write-through. Every store reaches memory as it is
+ * made, so a line in this region is never dirty and invalidating one can only
+ * discard a clean copy. The bootloader sets this up and the Arduino core never
+ * touches the MPU, so it is what every sketch runs under.
  *
- * The bounce buffer holds several sectors because the cost of the detour is not
- * the copy, it is losing the multi-block transfer: one sector per transaction
- * measured ten times slower on writes than one transaction for sixteen. At
- * eight sectors the misaligned path stays within reach of the direct one.
+ * Two things follow. cacheClean() before a write is a no-op in practice, kept
+ * because it is correct and costs nothing. And the bounce buffer below is not
+ * load-bearing for safety here - it is insurance for the day this runs under a
+ * write-back mapping, where a buffer sharing a line with anything else really
+ * would corrupt it.
+ *
+ * The bounce buffer earns its keep for a different reason anyway: it holds
+ * eight sectors, so a misaligned caller still gets multi-block transfers. One
+ * sector per transaction measured ten times slower on writes.
  */
 static void cacheClean(const void *addr, uint32_t size)
 {
@@ -433,6 +409,11 @@ static bool sdWaitDone(volatile bool *p_done, uint32_t timeout_ms)
     if (is_error) return false;
     if (millis() - pre_time >= timeout_ms) return false;
   }
+
+  // Fresh budget for the card's own busy period. Sharing one with the wait
+  // above means a transfer that took most of the timeout leaves nothing here,
+  // and a perfectly good write is reported as a failure and then aborted.
+  pre_time = millis();
   while (sdIsBusy() == true)
   {
     if (millis() - pre_time >= timeout_ms) return false;
@@ -498,53 +479,5 @@ static bool sdWriteDirect(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_
   return true;
 }
 
-#if HW_SD_USE_CMDIF == 1
-void sdCmdifInit(void)
-{
-  if (cmdifIsInit() == false)
-  {
-    cmdifInit();
-  }
-  cmdifAdd("sd", sdCmdif);
-}
-
-void sdCmdif(void)
-{
-  bool ret = true;
-  sd_info_t sd_info;
-
-
-  if (cmdifGetParamCnt() == 1 && cmdifHasString("info", 0) == true)
-  {
-    cmdifPrintf("sd init      : %d\n", is_init);
-    cmdifPrintf("sd connected : %d\n", sdIsDetected());
-
-    if (is_init == true)
-    {
-      if (sdGetInfo(&sd_info) == true)
-      {
-        cmdifPrintf("  card_type            : %d\n", sd_info.card_type);
-        cmdifPrintf("  card_version         : %d\n", sd_info.card_version);
-        cmdifPrintf("  card_class           : %d\n", sd_info.card_class);
-        cmdifPrintf("  rel_card_Add         : %d\n", sd_info.rel_card_Add);
-        cmdifPrintf("  block_numbers        : %d\n", sd_info.block_numbers);
-        cmdifPrintf("  block_size           : %d\n", sd_info.block_size);
-        cmdifPrintf("  log_block_numbers    : %d\n", sd_info.log_block_numbers);
-        cmdifPrintf("  log_block_size       : %d\n", sd_info.log_block_size);
-        cmdifPrintf("  card_size            : %d MB, %d.%d GB\n", sd_info.card_size, sd_info.card_size/1024, ((sd_info.card_size * 10)/1024) % 10);
-      }
-    }
-  }
-  else
-  {
-    ret = false;
-  }
-
-  if (ret == false)
-  {
-    cmdifPrintf( "sd info \n");
-  }
-}
-#endif /* _USE_HW_CMDIF_SD */
 
 #endif /* _USE_HW_SD */

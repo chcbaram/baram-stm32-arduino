@@ -74,6 +74,15 @@ public:
   using Print::write;
 
   int    read(void *buf, size_t size);
+
+  // Stream's own readBytes() loops on read() one byte at a time, which throws
+  // away the block transfer underneath. Libraries that take a Stream& - image
+  // loaders, JSON parsers - go through this, so it forwards to the block read.
+  size_t readBytes(char *buf, size_t size) override
+  {
+    int got = read(buf, size);
+    return got > 0 ? (size_t)got : 0;
+  }
   bool   seek(uint32_t pos);
   uint32_t position();
   uint32_t size();
@@ -132,8 +141,10 @@ public:
 
   // Card size in bytes, or 0 if there is no card.
   uint64_t cardSize();
-  // Free space on the mounted volume, in bytes.
+  // Capacity of the mounted volume, in bytes. Smaller than cardSize() by what
+  // the filesystem itself takes.
   uint64_t totalBytes();
+  // How much of that is in use. totalBytes() - usedBytes() is the free space.
   uint64_t usedBytes();
 
 private:

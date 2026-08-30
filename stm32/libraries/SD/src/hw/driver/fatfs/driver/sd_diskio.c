@@ -150,12 +150,12 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
   DRESULT res = RES_ERROR;
 
 
+  /* sdReadBlocks already waits for the transfer and for the card to leave its
+     busy state, both under a timeout. The spin that used to be here waited for
+     the same thing a second time with no timeout at all, so a card that stopped
+     responding hung the whole application. */
   if(sdReadBlocks((uint32_t) (sector), (uint8_t *)buff, count, SD_TIMEOUT) == true)
   {
-    /* wait until the read operation is finished */
-    while(sdIsBusy() == true)
-    {
-    }
     res = RES_OK;
   }
 
@@ -175,12 +175,9 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 {
   DRESULT res = RES_ERROR;
 
+  /* Same as SD_read: the wait is already done, under a timeout. */
   if(sdWriteBlocks((uint32_t)(sector), (uint8_t*)buff, count, SD_TIMEOUT) == true)
   {
-	/* wait until the Write operation is finished */
-    while(sdIsBusy() == true)
-    {
-    }
     res = RES_OK;
   }
 

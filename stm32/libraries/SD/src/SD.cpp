@@ -11,11 +11,21 @@ SDClass SD;
 static BYTE toFatfsMode(uint8_t mode)
 {
   BYTE m = 0;
-  if (mode & O_READ)   m |= FA_READ;
-  if (mode & O_WRITE)  m |= FA_WRITE;
-  if (mode & O_CREAT)  m |= FA_OPEN_ALWAYS;
-  if (mode & O_TRUNC)  m |= FA_CREATE_ALWAYS;
-  if (m == 0)          m = FA_READ;
+
+  if (mode & O_READ)  m |= FA_READ;
+  if (mode & O_WRITE) m |= FA_WRITE;
+
+  // FatFs spells the creation policy as one of three flags rather than a set of
+  // independent bits, so the combination has to be decided here. Most specific
+  // first: O_EXCL means fail if it is already there, O_TRUNC means start empty.
+  if ((mode & O_CREAT) && (mode & O_EXCL)) m |= FA_CREATE_NEW;
+  else if (mode & O_TRUNC)                 m |= FA_CREATE_ALWAYS;
+  else if (mode & O_CREAT)                 m |= FA_OPEN_ALWAYS;
+
+  // O_SYNC has no FatFs equivalent - it syncs on close and on f_sync(), which
+  // File::flush() calls - so it is accepted and has no effect.
+
+  if (m == 0) m = FA_READ;
   return m;
 }
 
@@ -89,8 +99,24 @@ bool SDClass::exists(const char *path)
 
 bool SDClass::mkdir(const char *path)
 {
-  if (!_mounted) return false;
-  FRESULT r = f_mkdir(path);
+  if (!_mounted || path == nullptr) return false;
+
+  // The standard library creates the intermediate directories too, so
+  // mkdir("/data/logs/2026") works in one call. f_mkdir only makes the last
+  // component, so walk the path and make each one in turn.
+  char work[256];
+  strncpy(work, path, sizeof(work) - 1);
+  work[sizeof(work) - 1] = '\0';
+
+  for (char *p = work + 1; *p != '\0'; p++) {
+    if (*p != '/') continue;
+    *p = '\0';
+    FRESULT r = f_mkdir(work);
+    if (r != FR_OK && r != FR_EXIST) return false;
+    *p = '/';
+  }
+
+  FRESULT r = f_mkdir(work);
   return r == FR_OK || r == FR_EXIST;
 }
 
@@ -118,7 +144,7 @@ uint64_t SDClass::totalBytes()
   if (!_mounted) return 0;
   FATFS *fs;
   DWORD free_clusters;
-  if (f_getfree("", &free_clusters, &fs) != FR_OK) return 0;
+  if (f_getfree(_path, &free_clusters, &fs) != FR_OK) return 0;
   return (uint64_t)(fs->n_fatent - 2) * fs->csize * _MAX_SS;
 }
 
@@ -127,7 +153,7 @@ uint64_t SDClass::usedBytes()
   if (!_mounted) return 0;
   FATFS *fs;
   DWORD free_clusters;
-  if (f_getfree("", &free_clusters, &fs) != FR_OK) return 0;
+  if (f_getfree(_path, &free_clusters, &fs) != FR_OK) return 0;
   uint64_t total = (uint64_t)(fs->n_fatent - 2) * fs->csize * _MAX_SS;
   uint64_t freed = (uint64_t)free_clusters * fs->csize * _MAX_SS;
   return total - freed;
