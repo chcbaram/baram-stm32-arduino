@@ -149,8 +149,11 @@ public:
 
 private:
   bool  _mounted = false;
-  // Line aligned for the same reason as uSdHandle in sd.c: the sector window
-  // at the end of this object is what DMA reads into.
+  // Aligned so this object never shares a cache line with what precedes it.
+  // Note this does not align fs->win: with this configuration win sits at
+  // offset 52 inside FATFS, so it is 4-byte aligned at best and always takes
+  // the driver's bounce path. Harmless under the write-through mapping the
+  // bootloader sets up - see the cache note in hw/driver/sd.c.
   alignas(32) FATFS _fs = {};
   char  _path[4] = {0};   // the volume FATFS_LinkDriver hands back
 };
