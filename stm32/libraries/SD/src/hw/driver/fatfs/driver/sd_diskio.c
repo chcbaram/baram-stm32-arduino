@@ -1,240 +1,89 @@
-/**
-  ******************************************************************************
-  * @file    sd_diskio.c
-  * @author  MCD Application Team
-  * @brief   SD Disk I/O driver.
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2017 STMicroelectronics International N.V.
-  * All rights reserved.</center></h2>
-  *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted, provided that the following conditions are met:
-  *
-  * 1. Redistribution of source code must retain the above copyright notice,
-  *    this list of conditions and the following disclaimer.
-  * 2. Redistributions in binary form must reproduce the above copyright notice,
-  *    this list of conditions and the following disclaimer in the documentation
-  *    and/or other materials provided with the distribution.
-  * 3. Neither the name of STMicroelectronics nor the names of other
-  *    contributors to this software may be used to endorse or promote products
-  *    derived from this software without specific written permission.
-  * 4. This software, including modifications and/or derivative works of this
-  *    software, must execute solely and exclusively on microcontroller or
-  *    microprocessor devices manufactured by or for STMicroelectronics.
-  * 5. Redistribution and use of this software other than as permitted under
-  *    this license is void and will automatically terminate your rights under
-  *    this license.
-  *
-  * THIS SOFTWARE IS PROVIDED BY STMICROELECTRONICS AND CONTRIBUTORS "AS IS"
-  * AND ANY EXPRESS, IMPLIED OR STATUTORY WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-  * PARTICULAR PURPOSE AND NON-INFRINGEMENT OF THIRD PARTY INTELLECTUAL PROPERTY
-  * RIGHTS ARE DISCLAIMED TO THE FULLEST EXTENT PERMITTED BY LAW. IN NO EVENT
-  * SHALL STMICROELECTRONICS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
-  * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-  * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-  *
-  ******************************************************************************
-  */
-
-/* Includes ------------------------------------------------------------------*/
-#include "lib/FatFs/src/ff_gen_drv.h"
-#include "hw/driver/fatfs/driver/sd_diskio.h"
-#include "hw/driver/sd.h"
-
-
-/* Private typedef -----------------------------------------------------------*/
-/* Private define ------------------------------------------------------------*/
-#define SD_TIMEOUT              5 * 1000
-#define SD_DEFAULT_BLOCK_SIZE   512
-
 /*
- * Depending on the usecase, the SD card initialization could be done at the
- * application level, if it is the case define the flag below to disable
- * the BSP_SD_Init() call in the SD_Initialize().
+ * sd_diskio.c
+ *
+ * The glue between FatFs and the card driver. FatFs asks for blocks by number;
+ * hw/driver/sd.c dispatches that to whichever back end the board has.
+ *
+ * There is one volume, so pdrv is ignored rather than looked up in a table.
+ * The generic-driver layer ST ships (ff_gen_drv.c) exists to register several
+ * media at runtime; with a single socket it is indirection for its own sake,
+ * and it was also where a stale registration could break a mount.
  */
 
-#define DISABLE_SD_INIT
+#include "hw/driver/sd.h"
+
+#include "lib/FatFs/source/ff.h"
+#include "lib/FatFs/source/diskio.h"
 
 
-/* Private variables ---------------------------------------------------------*/
-/* Disk status */
-static volatile DSTATUS Stat = STA_NOINIT;
+#define SD_TIMEOUT_MS   5000
 
-/* Private function prototypes -----------------------------------------------*/
-static DSTATUS SD_CheckStatus(BYTE lun);
-DSTATUS SD_initialize (BYTE);
-DSTATUS SD_status (BYTE);
-DRESULT SD_read (BYTE, BYTE*, DWORD, UINT);
-#if _USE_WRITE == 1
-  DRESULT SD_write (BYTE, const BYTE*, DWORD, UINT);
-#endif /* _USE_WRITE == 1 */
-#if _USE_IOCTL == 1
-  DRESULT SD_ioctl (BYTE, BYTE, void*);
-#endif  /* _USE_IOCTL == 1 */
 
-const Diskio_drvTypeDef  SD_Driver =
+DSTATUS disk_initialize(BYTE pdrv)
 {
-  SD_initialize,
-  SD_status,
-  SD_read,
-#if  _USE_WRITE == 1
-  SD_write,
-#endif /* _USE_WRITE == 1 */
-
-#if  _USE_IOCTL == 1
-  SD_ioctl,
-#endif /* _USE_IOCTL == 1 */
-};
-
-/* Private functions ---------------------------------------------------------*/
-static DSTATUS SD_CheckStatus(BYTE lun)
-{
-  Stat = STA_NOINIT;
-
-  if(sdIsBusy() == false)
-  {
-    Stat &= ~STA_NOINIT;
-  }
-
-  return Stat;
+  (void)pdrv;
+  // sd.c brings the card up; by the time FatFs asks, SD.begin() has done it.
+  return sdIsInit() ? 0 : STA_NOINIT;
 }
 
-/**
-  * @brief  Initializes a Drive
-  * @param  lun : not used
-  * @retval DSTATUS: Operation status
-  */
-DSTATUS SD_initialize(BYTE lun)
+DSTATUS disk_status(BYTE pdrv)
 {
-  Stat = STA_NOINIT;
-#if !defined(DISABLE_SD_INIT)
+  (void)pdrv;
+  return sdIsInit() ? 0 : STA_NOINIT;
+}
 
-  if(sdInit() == true)
-  {
-    Stat = SD_CheckStatus(lun);
-  }
+DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
+{
+  (void)pdrv;
 
-#else
-  Stat = SD_CheckStatus(lun);
+  if (!sdIsInit()) return RES_NOTRDY;
+  if (!sdReadBlocks((uint32_t)sector, (uint8_t *)buff, count, SD_TIMEOUT_MS)) return RES_ERROR;
+  return RES_OK;
+}
+
+#if !FF_FS_READONLY
+DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
+{
+  (void)pdrv;
+
+  if (!sdIsInit()) return RES_NOTRDY;
+  if (!sdWriteBlocks((uint32_t)sector, (uint8_t *)buff, count, SD_TIMEOUT_MS)) return RES_ERROR;
+  return RES_OK;
+}
 #endif
-  return Stat;
-}
 
-/**
-  * @brief  Gets Disk Status
-  * @param  lun : not used
-  * @retval DSTATUS: Operation status
-  */
-DSTATUS SD_status(BYTE lun)
+DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
 {
-  return SD_CheckStatus(lun);
-}
+  sd_info_t info;
 
-/**
-  * @brief  Reads Sector(s)
-  * @param  lun : not used
-  * @param  *buff: Data buffer to store read data
-  * @param  sector: Sector address (LBA)
-  * @param  count: Number of sectors to read (1..128)
-  * @retval DRESULT: Operation result
-  */
-DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
-{
-  DRESULT res = RES_ERROR;
+  (void)pdrv;
 
-
-  /* sdReadBlocks already waits for the transfer and for the card to leave its
-     busy state, both under a timeout. The spin that used to be here waited for
-     the same thing a second time with no timeout at all, so a card that stopped
-     responding hung the whole application. */
-  if(sdReadBlocks((uint32_t) (sector), (uint8_t *)buff, count, SD_TIMEOUT) == true)
-  {
-    res = RES_OK;
-  }
-
-  return res;
-}
-
-/**
-  * @brief  Writes Sector(s)
-  * @param  lun : not used
-  * @param  *buff: Data to be written
-  * @param  sector: Sector address (LBA)
-  * @param  count: Number of sectors to write (1..128)
-  * @retval DRESULT: Operation result
-  */
-#if _USE_WRITE == 1
-DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
-{
-  DRESULT res = RES_ERROR;
-
-  /* Same as SD_read: the wait is already done, under a timeout. */
-  if(sdWriteBlocks((uint32_t)(sector), (uint8_t*)buff, count, SD_TIMEOUT) == true)
-  {
-    res = RES_OK;
-  }
-
-  return res;
-}
-#endif /* _USE_WRITE == 1 */
-
-/**
-  * @brief  I/O control operation
-  * @param  lun : not used
-  * @param  cmd: Control code
-  * @param  *buff: Buffer to send/receive control data
-  * @retval DRESULT: Operation result
-  */
-#if _USE_IOCTL == 1
-DRESULT SD_ioctl(BYTE lun, BYTE cmd, void *buff)
-{
-  DRESULT res = RES_ERROR;
-  sd_info_t CardInfo;
-
-  if (Stat & STA_NOINIT) return RES_NOTRDY;
+  if (!sdIsInit()) return RES_NOTRDY;
 
   switch (cmd)
   {
-  /* Make sure that no pending write process */
-  case CTRL_SYNC :
-    res = RES_OK;
-    break;
+    case CTRL_SYNC:
+      // Writes are complete when sdWriteBlocks() returns - it waits for the
+      // card to leave its busy state - so there is nothing buffered here.
+      return RES_OK;
 
-  /* Get number of sectors on the disk (DWORD) */
-  case GET_SECTOR_COUNT :
-    sdGetInfo(&CardInfo);
-    *(DWORD*)buff = CardInfo.log_block_numbers;
-    res = RES_OK;
-    break;
+    case GET_SECTOR_COUNT:
+      if (!sdGetInfo(&info)) return RES_ERROR;
+      *(LBA_t *)buff = info.log_block_numbers;
+      return RES_OK;
 
-  /* Get R/W sector size (WORD) */
-  case GET_SECTOR_SIZE :
-    sdGetInfo(&CardInfo);
-    *(WORD*)buff = CardInfo.log_block_size;
-    res = RES_OK;
-    break;
+    case GET_SECTOR_SIZE:
+      if (!sdGetInfo(&info)) return RES_ERROR;
+      *(WORD *)buff = (WORD)info.log_block_size;
+      return RES_OK;
 
-  /* Get erase block size in unit of sector (DWORD) */
-  case GET_BLOCK_SIZE :
-    sdGetInfo(&CardInfo);
-    *(DWORD*)buff = CardInfo.log_block_size / SD_DEFAULT_BLOCK_SIZE;
-	res = RES_OK;
-    break;
+    case GET_BLOCK_SIZE:
+      // In sectors, for the allocation unit. One is always correct and only
+      // costs a little erase efficiency on f_mkfs, which is not built.
+      *(DWORD *)buff = 1;
+      return RES_OK;
 
-  default:
-    res = RES_PARERR;
+    default:
+      return RES_PARERR;
   }
-
-  return res;
 }
-#endif /* _USE_IOCTL == 1 */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
-

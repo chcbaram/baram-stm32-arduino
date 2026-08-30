@@ -76,6 +76,15 @@ const int resolution[][2] = {
  * from PLL1Q - so it gets enabled here. Passing RCC_PLL_NONE means HAL touches
  * nothing else: PLL1 must not be disturbed, because the application executes in
  * place from QSPI and stopping PLL1 stops instruction fetch.
+ *
+ * Nothing here turns HSI48 back off, and nothing should. It is shared: the
+ * bootloader clocks USB from it, and so does the board's own firmware. An
+ * Arduino sketch happens to be the one case where the camera is its only
+ * consumer - the variant clocks USB from PLL1Q instead - but a cameraDeInit()
+ * that disabled it would take USB down with it on every other image, and the
+ * symptom ("the serial port dies when the camera stops") points nowhere near an
+ * oscillator. Stopping MCO1, or returning PA8 to analogue, is the way to shut
+ * the sensor's clock off.
  */
 static bool cameraXclkStart(void)
 {

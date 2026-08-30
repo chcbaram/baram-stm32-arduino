@@ -38,7 +38,7 @@
 
 extern "C" {
 #include "hw/driver/sd.h"
-#include "lib/FatFs/src/ff.h"
+#include "lib/FatFs/source/ff.h"
 }
 
 #define FILE_READ   O_READ
@@ -158,7 +158,9 @@ private:
   // the driver's bounce path. Harmless under the write-through mapping the
   // bootloader sets up - see the cache note in hw/driver/sd.c.
   alignas(32) FATFS _fs = {};
-  char  _path[4] = {0};   // the volume FATFS_LinkDriver hands back
+  // There is one volume, so paths carry no drive prefix. Kept only because
+  // open() builds child paths against it.
+  char  _path[4] = {0};
 };
 
 extern SDClass SD;

@@ -1,8 +1,6 @@
 #include "SD.h"
 
 extern "C" {
-#include "hw/driver/fatfs/driver/sd_diskio.h"
-#include "lib/FatFs/src/ff_gen_drv.h"
 }
 
 SDClass SD;
@@ -38,11 +36,10 @@ bool SDClass::begin()
   if (!sdIsDetected()) return false;
   if (!sdInit()) return false;
 
-  // Hand FatFs the block driver, then mount. Mounting here rather than on first
-  // access is what lets begin() answer truthfully about whether there is a
-  // filesystem to talk to.
-  if (FATFS_LinkDriver(&SD_Driver, _path) != 0) return false;
-  if (f_mount(&_fs, _path, 1) != FR_OK) return false;
+  // Mount now rather than on first access: that is what lets begin() answer
+  // truthfully about whether there is a filesystem to talk to. The empty volume
+  // string is drive 0, the only one - FF_VOLUMES is 1.
+  if (f_mount(&_fs, "", 1) != FR_OK) return false;
 
   _mounted = true;
   return true;
@@ -51,8 +48,7 @@ bool SDClass::begin()
 void SDClass::end()
 {
   if (!_mounted) return;
-  f_mount(nullptr, _path, 0);
-  FATFS_UnLinkDriver(_path);
+  f_mount(nullptr, "", 0);
   sdDeInit();
   _mounted = false;
 }
@@ -144,8 +140,8 @@ uint64_t SDClass::totalBytes()
   if (!_mounted) return 0;
   FATFS *fs;
   DWORD free_clusters;
-  if (f_getfree(_path, &free_clusters, &fs) != FR_OK) return 0;
-  return (uint64_t)(fs->n_fatent - 2) * fs->csize * _MAX_SS;
+  if (f_getfree("", &free_clusters, &fs) != FR_OK) return 0;
+  return (uint64_t)(fs->n_fatent - 2) * fs->csize * FF_MAX_SS;
 }
 
 uint64_t SDClass::usedBytes()
@@ -153,9 +149,9 @@ uint64_t SDClass::usedBytes()
   if (!_mounted) return 0;
   FATFS *fs;
   DWORD free_clusters;
-  if (f_getfree(_path, &free_clusters, &fs) != FR_OK) return 0;
-  uint64_t total = (uint64_t)(fs->n_fatent - 2) * fs->csize * _MAX_SS;
-  uint64_t freed = (uint64_t)free_clusters * fs->csize * _MAX_SS;
+  if (f_getfree("", &free_clusters, &fs) != FR_OK) return 0;
+  uint64_t total = (uint64_t)(fs->n_fatent - 2) * fs->csize * FF_MAX_SS;
+  uint64_t freed = (uint64_t)free_clusters * fs->csize * FF_MAX_SS;
   return total - freed;
 }
 
@@ -280,6 +276,9 @@ File File::openNextFile(uint8_t mode)
   bool at_root = (_path[0] == '\0' || strcmp(_path, "/") == 0);
   snprintf(path, sizeof(path), "%s%s%s", at_root ? "/" : _path,
            at_root ? "" : "/", info.fname);
+  // FatFs hands back UTF-8 now, so a name with Hangul in it costs three bytes
+  // per character. snprintf truncates rather than overruns; _path is 256, which
+  // is about 85 characters.
 
   return SD.open(path, mode);
 }
