@@ -31,6 +31,17 @@ static uint16_t cam_buf[HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT]
 
 static bool cam_ok = false;
 
+/*
+ * Where in the buffer to read, and how long a row really is.
+ *
+ * Kept as variables rather than baked in: the sensor's actual line length is
+ * the thing in doubt, and being able to try a different stride without
+ * rebuilding the maths in two places is worth more than the constant folding.
+ */
+static int32_t cam_stride = HW_CAMERA_WIDTH;
+static int32_t cam_x = 0;
+static int32_t cam_y = 0;
+
 // Sensor configuration, read back once during bring-up.
 static uint8_t reg_im, reg_byp, reg_zw, reg_zh, reg_zhh, reg_hs, reg_vs, reg_c7;
 
@@ -85,6 +96,9 @@ static void report(void)
   int32_t w = 0, h = 0;
   cameraGetResolution(&w, &h);
   Serial.printf("resolution  : %ld x %ld\n", (long)w, (long)h);
+  extern uint8_t ov2640_clkrc_before, ov2640_clkrc_after;
+  Serial.printf("CLKRC       : 0x%02X -> 0x%02X  (bit7 = PCLK doubler)\n",
+                ov2640_clkrc_before, ov2640_clkrc_after);
   Serial.printf("IMAGE_MODE  : 0x%02X (0x08=RGB565 0x00=YUV422 +0x10=JPEG)  R_BYPASS 0x%02X\n",
                 reg_im, reg_byp);
   Serial.printf("out window  : ZMOW %u ZMOH %u ZMHH 0x%02X -> %u x %u   HSIZE8 %u VSIZE8 %u   COM7 0x%02X\n",
@@ -163,6 +177,9 @@ void setup()
     // nothing has to re-arm it per frame.
     // Bring-up aid: set to 1 to have the sensor emit its colour bar instead of
     // a picture, which separates a bad capture path from a bad sensor setup.
+
+    // Bring-up aid: the sensor's own colour bar. Enabled before the registers
+    // are read back, so the report shows whether it actually took.
     cameraSetColorbar(1);
 
     /*
@@ -208,16 +225,24 @@ void loop()
   {
     if (cam_ok) {
       /*
-       * The sensor is 4:3 and the panel is 2:1, so scaling the whole frame
-       * would squash it. Take the middle 320x160 band instead and scale that,
-       * which keeps circles round at the cost of the top and bottom.
+       * Straight copy, no scaling.
+       *
+       * Scaling hides what is wrong: if the number of pixels per line in the
+       * buffer is not what the stride says, every row lands shifted and the
+       * result looks like noise no matter how good the capture was. A 1:1 crop
+       * of the top left shows the raw truth - a real picture appears as a
+       * picture, and a wrong stride shows as a recognisable image sheared
+       * across the screen rather than as mush.
        */
-      resize_image_t src = { HW_CAMERA_WIDTH, HW_CAMERA_HEIGHT / 2,
-                             0, HW_CAMERA_HEIGHT / 4,
-                             HW_CAMERA_WIDTH, cam_buf };
-      resize_image_t dst = { board.lcd.width(), board.lcd.height(), 0, 0,
-                             board.lcd.width(), board.lcd.frameBuffer() };
-      resizeImageFast(&src, &dst);
+      const int32_t lw = board.lcd.width();
+      const int32_t lh = board.lcd.height();
+      uint16_t *dst = board.lcd.frameBuffer();
+
+      for (int32_t y = 0; y < lh; y++) {
+        const uint16_t *srow = &cam_buf[(y + cam_y) * cam_stride + cam_x];
+        uint16_t       *drow = &dst[y * lw];
+        for (int32_t x = 0; x < lw; x++) drow[x] = srow[x];
+      }
     } else {
       board.lcd.clear(black);
       board.lcd.printf(4, 2,  red,  "카메라 없음");

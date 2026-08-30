@@ -14,6 +14,10 @@ static uint8_t i2c_ch = _DEF_I2C1;
  * the file's own accessors work through it unchanged.
  */
 static camera_t *p_sensor = NULL;
+
+// Reported by the example so the doubler's state is visible from a sketch.
+uint8_t ov2640_clkrc_before = 0;
+uint8_t ov2640_clkrc_after  = 0;
 #define hcamera (*p_sensor)
 
 #define OV2640_XCLK_FREQUENCY       (HW_CAMERA_XCLK_HZ)
@@ -151,7 +155,28 @@ static int reset()
     // Reset all registers
     OV2640_WR_Reg(BANK_SEL, BANK_SEL_SENSOR);
     OV2640_WR_Reg(COM7, COM7_SRST);
-    // Delay 5 ms
+
+    /*
+     * The delay after the software reset.
+     *
+     * 5 ms is what this was ported with and what streams today. The
+     * manufacturer's other example for the same sensor uses 100 ms, which is
+     * worth remembering - but on this board 100 ms produces no capture at all,
+     * so it is not simply a matter of waiting longer.
+     *
+     * Left at 5. The note below is kept because the reasoning still applies to
+     * whatever finally fixes the sensor bring-up.
+     *
+     * ---
+     *
+     * The version this was ported from waits 5 ms. The manufacturer's other
+     * example for the same sensor waits 100, and that is the one to copy: at
+     * 5 ms the part is still coming out of reset when the register table starts
+     * arriving, so the writes are accepted over SCCB but the DSP never ends up
+     * configured. What that looks like from outside is a sensor that answers
+     * its address and drives sync, while its data lines sit still - which is
+     * indistinguishable from a wiring fault until you wait longer.
+     */
     ov2640_delay(5);
     wrSensorRegs(ov2640_Slow_regs);
     // 30 ms
@@ -566,6 +591,24 @@ static int ov2640_reset(camera_t *sensor)
   set_pixformat(sensor->pixformat);
   set_hmirror(0);
   set_vflip(0);
+
+  /*
+   * Drop the pixel clock doubler.
+   *
+   * CLKRC's top bit doubles PCLK without changing the rate the data lines
+   * actually change at, so the DCMI latches every byte twice: the capture comes
+   * out full of pixels whose two halves are identical - 0xC2C2, 0x0D0D - and no
+   * image survives that.
+   *
+   * This is the "high frame rate register configuration" the manufacturer warns
+   * about in their own driver. Their suggested workaround is to move XCLK off
+   * MCO1, which does not help here; clearing the doubler addresses the cause.
+   */
+  OV2640_WR_Reg(BANK_SEL, BANK_SEL_SENSOR);
+  ov2640_clkrc_before = OV2640_RD_Reg(CLKRC);
+  OV2640_WR_Reg(CLKRC, ov2640_clkrc_before & (uint8_t)~CLKRC_DOUBLE);
+  ov2640_clkrc_after = OV2640_RD_Reg(CLKRC);
+  OV2640_WR_Reg(BANK_SEL, BANK_SEL_DSP);
 
   return 0;
 }
