@@ -39,7 +39,8 @@
 
 
 #define CACHE_LINE          32
-#define IS_LINE_ALIGNED(a)  ((((uint32_t)(a)) & (CACHE_LINE - 1)) == 0)
+// (was used to pick a direct DMA path into the caller's buffer; see the note
+// above sd_bounce for why that path is gone)
 
 #ifndef HW_SD_BOUNCE_SECTORS
 #define HW_SD_BOUNCE_SECTORS  8
@@ -162,13 +163,10 @@ bool sdmmcRead(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uin
 {
   if (is_init == false) return false;
 
-  if (IS_LINE_ALIGNED(p_data))
-  {
-    return sdReadDirect(block_addr, p_data, num_of_blocks, timeout_ms);
-  }
-
-  // Misaligned caller buffer: through the bounce buffer, as many sectors per
-  // transfer as it holds.
+  // Every transfer goes through the bounce buffer. See the note above it for
+  // why the direct path is gone.
+  //
+  // As many sectors per transfer as the bounce buffer holds.
   for (uint32_t done = 0; done < num_of_blocks; )
   {
     uint32_t n = num_of_blocks - done;
@@ -187,11 +185,6 @@ bool sdmmcRead(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uin
 bool sdmmcWrite(uint32_t block_addr, uint8_t *p_data, uint32_t num_of_blocks, uint32_t timeout_ms)
 {
   if (is_init == false) return false;
-
-  if (IS_LINE_ALIGNED(p_data))
-  {
-    return sdWriteDirect(block_addr, p_data, num_of_blocks, timeout_ms);
-  }
 
   for (uint32_t done = 0; done < num_of_blocks; )
   {
@@ -402,15 +395,37 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
  * discard a clean copy. The bootloader sets this up and the Arduino core never
  * touches the MPU, so it is what every sketch runs under.
  *
- * Two things follow. cacheClean() before a write is a no-op in practice, kept
- * because it is correct and costs nothing. And the bounce buffer below is not
- * load-bearing for safety here - it is insurance for the day this runs under a
- * write-back mapping, where a buffer sharing a line with anything else really
- * would corrupt it.
+ * That reasoning is sound and it is also not the whole story. Measured on this
+ * board, a transfer whose target is a caller's buffer ON THE STACK faults even
+ * when the buffer is cache line aligned and a whole number of lines long:
  *
- * The bounce buffer earns its keep for a different reason anyway: it holds
- * eight sectors, so a misaligned caller still gets multi-block transfers. One
- * sector per transaction measured ten times slower on writes.
+ *   SdAlign, direct DMA into an alignas(32) File on the stack   39/40 fault
+ *   SdAlign, every transfer through the bounce buffer below     40/40 clean
+ *
+ * Forty runs each, same binary re-run without rebuilding, bootloader fixed at
+ * V260830R8. The fault is UNDEFINSTR with the stacked PC pointing at the second
+ * halfword of a bl - control flow arrived somewhere that is not an instruction,
+ * which is what a smashed return address looks like.
+ *
+ * Two things it is NOT. Swapping the invalidate for a clean+invalidate does not
+ * help (37/40 still fault), so it is not a dirty line being discarded, which
+ * matches the write-through mapping above. And the bounce buffer is ordinary
+ * .bss in the same cacheable AXI SRAM, so it is not the memory attributes
+ * either - the difference is only that it is not the stack.
+ *
+ * The mechanism is not understood. What is measured is that the direct path is
+ * unsafe here, so there is no direct path: every transfer bounces. The cost is
+ * a memcpy and a cap of eight sectors per transaction, which is worth paying
+ * for a fault that corrupts the caller's return address.
+ *
+ * (A fourth build, direct path with the cache maintenance removed, came back
+ * 40/40 clean and was a false negative - dumping the sketch's own log showed
+ * SD.begin() had failed, so it never reached the code that faults. Any run of
+ * this has to check that the card actually mounted before the count means
+ * anything.)
+ *
+ * cacheClean() before a write stays. It is a no-op under write-through and is
+ * correct if the mapping ever changes.
  */
 /*
  * Cache maintenance around DMA.
