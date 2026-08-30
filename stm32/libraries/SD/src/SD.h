@@ -41,12 +41,21 @@ extern "C" {
 #define FILE_READ   O_READ
 #define FILE_WRITE  (O_READ | O_WRITE | O_CREAT | O_APPEND)
 
+// The same numeric values SdFat uses, which is what the standard library is
+// built on. Code that passes a flag by name would work with any values, but
+// matching them means a library that has hard-coded one still behaves.
 enum {
-  O_READ   = 0x01,
-  O_WRITE  = 0x02,
-  O_CREAT  = 0x10,
-  O_APPEND = 0x20,
-  O_TRUNC  = 0x40,
+  O_READ    = 0x01,
+  O_RDONLY  = O_READ,
+  O_WRITE   = 0x02,
+  O_WRONLY  = O_WRITE,
+  O_RDWR    = (O_READ | O_WRITE),
+  O_ACCMODE = (O_READ | O_WRITE),
+  O_APPEND  = 0x04,
+  O_SYNC    = 0x08,
+  O_CREAT   = 0x10,
+  O_EXCL    = 0x20,
+  O_TRUNC   = 0x40,
 };
 
 class File : public Stream
@@ -70,7 +79,9 @@ public:
   uint32_t size();
   void   close();
 
-  const char *name() const { return _name; }
+  // char*, not const char*, because that is what the standard library returns
+  // and code assigning it to a char* is common.
+  char  *name() { return _name; }
   bool   isDirectory();
 
   // Directories only. Returns a closed File when there is nothing left, so
@@ -98,6 +109,13 @@ public:
   // Brings up SDMMC and mounts the first FAT volume. False means no card, an
   // unreadable card, or no filesystem on it.
   bool begin();
+
+  // The standard library talks SPI and needs a chip select, and half the
+  // sketches and libraries in existence call begin(csPin). This socket is on
+  // SDMMC, which has no chip select and a clock the driver sets itself, so the
+  // arguments are accepted and ignored rather than made into a compile error.
+  bool begin(uint8_t csPin) { (void)csPin; return begin(); }
+  bool begin(uint32_t clock, uint8_t csPin) { (void)clock; (void)csPin; return begin(); }
   void end();
 
   File open(const char *path, uint8_t mode = FILE_READ);
