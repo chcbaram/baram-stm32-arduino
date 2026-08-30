@@ -92,25 +92,27 @@ HiGenis.build.flash_offset=0x0
 HiGenis.upload.maximum_size=0
 HiGenis.upload.maximum_data_size=0
 HiGenis.openocd.target=stm32h7x
-# The board is recognised in either state. The bootloader and the sketch
-# enumerate with different product IDs so tools can tell them apart, and both
-# are listed here so the IDE keeps recognising the board across a reset.
-# 0x1209 is pid.codes, the vendor ID shared by open source hardware projects,
-# and these three product IDs were free in its registry when they were picked.
-#   0xB750  bootloader, CDC + HID
-#   0xB751  bootloader, CDC + HID + UF2 mass storage (after a reset double-tap)
-#   0xB752  the sketch
+# Its own product IDs, in the same three roles the BARAM group uses. They have
+# to differ: two board groups claiming one USB ID makes the IDE offer both for
+# a single port, so plugging in a WEACT-H750-MINI would also present a board
+# that does not exist.
+#   0xB753  bootloader, CDC + HID
+#   0xB754  bootloader, CDC + HID + UF2 mass storage (after a reset double-tap)
+#   0xB755  the sketch
+# Placeholder values until there is hardware: nothing enumerates as these yet,
+# and they are reserved alongside 0xB750-0xB752 when the range is registered
+# with pid.codes.
 HiGenis.vid.0=0x1209
-HiGenis.pid.0=0xB750
+HiGenis.pid.0=0xB753
 HiGenis.vid.1=0x1209
-HiGenis.pid.1=0xB751
+HiGenis.pid.1=0xB754
 HiGenis.vid.2=0x1209
-HiGenis.pid.2=0xB752
+HiGenis.pid.2=0xB755
 
 # What the sketch itself enumerates as. platform.txt defaults build.vid/build.pid
 # to vid.0/pid.0, which would make the sketch impersonate the bootloader.
 HiGenis.build.vid=0x1209
-HiGenis.build.pid=0xB752
+HiGenis.build.pid=0xB755
 HiGenis.build.usb_manufacturer="BARAM"
 HiGenis.build.usb_product="HiGenis"
 
@@ -140,8 +142,8 @@ HiGenis.menu.pnum.HIGENIS_DUMMY.debug.svd_file={runtime.tools.STM32_SVD.path}/sv
 BARAM.menu.upload_method.usbMethod=Bootloader USB (CDC)
 BARAM.menu.upload_method.usbMethod.upload.protocol=serial
 BARAM.menu.upload_method.usbMethod.upload.tool=baram_boot
-BARAM.menu.upload_method.usbMethod.upload.use_1200bps_touch=true
-BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=true
+BARAM.menu.upload_method.usbMethod.upload.use_1200bps_touch=false
+BARAM.menu.upload_method.usbMethod.upload.wait_for_upload_port=false
 
 # Writes the application into the external QSPI flash over SWD using OpenOCD's
 # stmqspi driver. The MCU acts as the bridge: OpenOCD drives the QUADSPI
