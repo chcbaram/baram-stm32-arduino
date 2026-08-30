@@ -23,9 +23,9 @@ extern "C" {
 #include "hw/driver/resize.h"
 }
 
-// 320 x 240 x 2 bytes. D2 SRAM holds 288 KB and the panel's own frame buffer
-// takes 25 KB of it, so this fits with room to spare. A second buffer would
-// not, which is why the sensor writes into one and the panel reads from it.
+// 160 x 120 x 2 bytes, in D2 SRAM alongside the panel's own frame buffer. Small
+// enough that the single-buffer argument no longer bites, but there is still no
+// reason for a second one: the panel reads what the sensor is filling.
 static uint16_t cam_buf[HW_CAMERA_WIDTH * HW_CAMERA_HEIGHT]
   __attribute__((section(".non_cache"), aligned(32)));
 
@@ -102,14 +102,21 @@ void setup()
   Serial.println(F("\nboot"));
   Serial.flush();
 
+  cam_ok = cameraInit();
+  Serial.printf("cameraInit  : %s\n", cam_ok ? "ok" : "FAILED");
+  Serial.flush();
+
   /*
-   * Identify whatever is on the bus, once, before the driver touches it.
+   * Identify whatever is on the bus, once, once the clock is up.
    *
-   * This has to happen here rather than in the repeating report: an OV2640 has
-   * banked registers, so reading its id means writing the bank select first,
-   * and doing that every couple of seconds leaves the sensor pointed at the
-   * wrong bank in between - which stops it delivering frames. The probe is
-   * cheap to run once and actively harmful to repeat.
+   * Two things put it exactly here. It runs after cameraInit() because the
+   * sensor clocks its SCCB logic from XCLK and will not answer - or release the
+   * bus - before that exists; a scan of all 112 addresses against a dead bus
+   * hangs rather than merely reporting nothing. And it runs once rather than in
+   * the repeating report because an OV2640 has banked registers, so reading its
+   * id means writing the bank select first, and doing that every couple of
+   * seconds leaves the sensor pointed at the wrong bank in between - which
+   * stops it delivering frames.
    */
   {
     uint8_t seen[8];
@@ -128,13 +135,10 @@ void setup()
     Serial.flush();
   }
 
-  cam_ok = cameraInit();
-  Serial.printf("cameraInit  : %s\n", cam_ok ? "ok" : "FAILED");
-  Serial.flush();
 
   if (cam_ok) {
     cameraSetPixformat(PIXFORMAT_RGB565);
-    cameraSetFramesize(FRAMESIZE_QVGA);
+    cameraSetFramesize(HW_CAMERA_FRAMESIZE);
     // Circular DMA: the sensor keeps refilling this buffer on its own, so
     // nothing has to re-arm it per frame.
     cam_ok = cameraStart((uint8_t *)cam_buf, CAMERA_MODE_CONTINUOUS);

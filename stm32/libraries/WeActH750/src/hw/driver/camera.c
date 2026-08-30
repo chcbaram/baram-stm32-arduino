@@ -89,27 +89,58 @@ const int resolution[][2] = {
  */
 static bool cameraXclkStart(void)
 {
-  RCC_OscInitTypeDef osc = {0};
-  GPIO_InitTypeDef   gpio_init = {0};
-
-  osc.OscillatorType = RCC_OSCILLATORTYPE_HSI48;
-  osc.HSI48State     = RCC_HSI48_ON;
-  osc.PLL.PLLState   = RCC_PLL_NONE;
-  if (HAL_RCC_OscConfig(&osc) != HAL_OK)
-  {
-    return false;
-  }
+  GPIO_InitTypeDef gpio_init = {0};
 
   HW_CAMERA_XCLK_CLK_ENABLE();
   gpio_init.Pin       = HW_CAMERA_XCLK_PIN;
   gpio_init.Mode      = GPIO_MODE_AF_PP;
   gpio_init.Pull      = GPIO_NOPULL;
   gpio_init.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+#ifdef HW_CAMERA_XCLK_TIM
+  gpio_init.Alternate = HW_CAMERA_XCLK_AF_TIM;
+#else
   gpio_init.Alternate = HW_CAMERA_XCLK_AF;
+#endif
   HAL_GPIO_Init(HW_CAMERA_XCLK_PORT, &gpio_init);
+
+#ifdef HW_CAMERA_XCLK_TIM
+  static TIM_HandleTypeDef htim;
+  TIM_OC_InitTypeDef oc = {0};
+  uint32_t div = HW_CAMERA_TIM_CLK_HZ / HW_CAMERA_XCLK_HZ;
+
+  HW_CAMERA_TIM_CLK_ENABLE();
+
+  htim.Instance               = HW_CAMERA_TIM;
+  htim.Init.Prescaler         = 0;
+  htim.Init.CounterMode       = TIM_COUNTERMODE_UP;
+  htim.Init.Period            = div - 1;
+  htim.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
+  htim.Init.RepetitionCounter = 0;
+  htim.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim) != HAL_OK) return false;
+
+  oc.OCMode       = TIM_OCMODE_PWM1;
+  oc.Pulse        = div / 2;                 /* square wave */
+  oc.OCPolarity   = TIM_OCPOLARITY_HIGH;
+  oc.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
+  oc.OCFastMode   = TIM_OCFAST_DISABLE;
+  oc.OCIdleState  = TIM_OCIDLESTATE_RESET;
+  oc.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim, &oc, HW_CAMERA_TIM_CH) != HAL_OK) return false;
+
+  /* An advanced timer needs its main output enabling; HAL_TIM_PWM_Start does it. */
+  return HAL_TIM_PWM_Start(&htim, HW_CAMERA_TIM_CH) == HAL_OK;
+#else
+  RCC_OscInitTypeDef osc = {0};
+
+  osc.OscillatorType = RCC_OSCILLATORTYPE_HSI48;
+  osc.HSI48State     = RCC_HSI48_ON;
+  osc.PLL.PLLState   = RCC_PLL_NONE;
+  if (HAL_RCC_OscConfig(&osc) != HAL_OK) return false;
 
   HAL_RCC_MCOConfig(RCC_MCO1, HW_CAMERA_MCO_SOURCE, HW_CAMERA_MCO_DIV);
   return true;
+#endif
 }
 
 /*
@@ -209,7 +240,7 @@ bool cameraInit(void)
      * overruns, and the HAL aborts the transfer - one partial frame and then
      * nothing, with no error a sketch can see.
      */
-    cameraSetFramesize(FRAMESIZE_QVGA);
+    cameraSetFramesize(HW_CAMERA_FRAMESIZE);
     cameraSetPixformat(PIXFORMAT_RGB565);
 
     is_init = true;
@@ -529,7 +560,13 @@ static void DCMI_MspInit(DCMI_HandleTypeDef *hdcmi)
 
   gpio_init.Mode      = GPIO_MODE_AF_PP;
   gpio_init.Pull      = GPIO_NOPULL;
-  gpio_init.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+  /*
+   * Low, not very high. These are inputs on a ribbon to a camera module; the
+   * fastest slew setting buys nothing on an input and, on a cable this length,
+   * makes the edges worse. It is also what the manufacturer's own configuration
+   * for this board uses.
+   */
+  gpio_init.Speed     = GPIO_SPEED_FREQ_LOW;
   gpio_init.Alternate = HW_CAMERA_AF;
 
   gpio_init.Pin = HW_CAMERA_PORTA_PINS;   HAL_GPIO_Init(GPIOA, &gpio_init);
@@ -551,19 +588,14 @@ static void DCMI_MspInit(DCMI_HandleTypeDef *hdcmi)
   hdma_handler.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
   hdma_handler.Init.MemDataAlignment    = DMA_MDATAALIGN_WORD;
   hdma_handler.Init.Mode                = DMA_CIRCULAR;
-  hdma_handler.Init.Priority            = DMA_PRIORITY_HIGH;
+  hdma_handler.Init.Priority            = DMA_PRIORITY_LOW;
 
   /*
-   * Direct mode - no FIFO.
+   * Direct mode, exactly as the manufacturer configures it for this board.
    *
-   * With the FIFO enabled the stream buffers up to its threshold before writing
-   * out, and the DCMI's own four word FIFO overruns while it waits. That is the
-   * failure this started as: a frame captured to about 85% and then an overrun,
-   * with the HAL aborting the transfer and never restarting it.
-   *
-   * The manufacturer's example for this board runs direct mode for the same
-   * reason. There is nothing to gain from the FIFO here anyway: the transfer is
-   * word to word, so no packing is needed.
+   * The FIFO buys nothing here - the transfer is word to word, so there is no
+   * packing to do - and with a threshold to reach it only adds latency for the
+   * DCMI's own four word FIFO to overrun into.
    */
   hdma_handler.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
 
@@ -594,10 +626,10 @@ static void DCMI_MspInit(DCMI_HandleTypeDef *hdcmi)
   HAL_NVIC_ClearPendingIRQ(HW_CAMERA_DMA_IRQn);
   HAL_NVIC_ClearPendingIRQ(DCMI_IRQn);
 
-  HAL_NVIC_SetPriority(DCMI_IRQn, 0x05, 0);
+  HAL_NVIC_SetPriority(DCMI_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DCMI_IRQn);
 
-  HAL_NVIC_SetPriority(HW_CAMERA_DMA_IRQn, 0x05, 0);
+  HAL_NVIC_SetPriority(HW_CAMERA_DMA_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(HW_CAMERA_DMA_IRQn);
 }
 

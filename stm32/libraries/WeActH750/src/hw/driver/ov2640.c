@@ -530,7 +530,27 @@ int ov2640_init(framesize_t framesize)
  * between the two. They are not doing any work; keeping them separate is what
  * lets the file above stay the file it was ported from.
  */
-static int ov2640_reset(camera_t *sensor)                              { (void)sensor; return reset(); }
+/*
+ * The manufacturer's own bring-up sequence, in the order they use it.
+ *
+ * reset() alone leaves the sensor with no output format and no window, and
+ * set_pixformat() re-applies whatever frame size is currently recorded - so the
+ * size has to be in place before it runs, and the two have to happen together.
+ * Doing it here rather than leaving camera.c to sequence it keeps the order
+ * with the driver that knows why it matters.
+ */
+static int ov2640_reset(camera_t *sensor)
+{
+  reset();
+
+  sensor->framesize = HW_CAMERA_FRAMESIZE;
+  sensor->pixformat = PIXFORMAT_RGB565;
+
+  set_pixformat(sensor->pixformat);
+  set_hmirror(0);
+  set_vflip(0);
+  return 0;
+}
 static int ov2640_read_reg(camera_t *sensor, uint16_t a)               { (void)sensor; return read_reg(a); }
 static int ov2640_write_reg(camera_t *sensor, uint16_t a, uint16_t d)  { (void)sensor; return write_reg(a, d); }
 static int ov2640_set_pixformat(camera_t *sensor, pixformat_t f)       { (void)sensor; return set_pixformat(f); }

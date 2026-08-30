@@ -153,8 +153,14 @@ extern "C" {
 #define _USE_HW_OV2640
 #define _USE_HW_OV7725
 
+/*
+ * QQVGA, which is what the manufacturer's example runs on this board and what
+ * the panel wants anyway: 160 wide is the panel's width exactly, so a frame
+ * needs cropping vertically and no scaling at all.
+ */
 #define HW_CAMERA_WIDTH           320
 #define HW_CAMERA_HEIGHT          240
+#define HW_CAMERA_FRAMESIZE       FRAMESIZE_QVGA
 
 /*
  * The sensor's master clock, out of MCO1.
@@ -170,12 +176,39 @@ extern "C" {
  * the camera independent of the rest of the clock tree.
  */
 #define HW_CAMERA_XCLK_HZ         12000000
-#define HW_CAMERA_MCO_SOURCE      RCC_MCO1SOURCE_HSI48
-#define HW_CAMERA_MCO_DIV         RCC_MCODIV_4
 #define HW_CAMERA_XCLK_PORT       GPIOA
 #define HW_CAMERA_XCLK_PIN        GPIO_PIN_8
-#define HW_CAMERA_XCLK_AF         GPIO_AF0_MCO
 #define HW_CAMERA_XCLK_CLK_ENABLE()  __HAL_RCC_GPIOA_CLK_ENABLE()
+
+/*
+ * XCLK comes from TIM1, not MCO1.
+ *
+ * PA8 is both MCO1 and TIM1_CH1, and MCO1 is the obvious choice - it is what
+ * the manufacturer's example uses by default. Their own source carries the
+ * caveat, though: with an OV2640 driven from MCO1 the picture can come out
+ * corrupted, and they offer a TIM1 channel 1 square wave as the alternative.
+ * That matches what this board did - captures that reached about ninety percent
+ * of a frame and then overran.
+ *
+ * Their note also says TIM1 collides with their LCD backlight PWM. It does not
+ * here: this board's backlight is a plain GPIO (see LCD_BL in gpio.cpp), so
+ * nothing else wants the timer.
+ *
+ * TIM1 sits on APB2. With this variant's tree - SYSCLK 480, HCLK 240, APB2 120 -
+ * the timer clock is twice PCLK2, so 240 MHz; dividing by 20 gives the 12 MHz
+ * the sensor's register tables assume.
+ */
+// #define HW_CAMERA_XCLK_TIM   /* see the note above; MCO1 is what delivers frames today */
+#define HW_CAMERA_TIM             TIM1
+#define HW_CAMERA_TIM_CH          TIM_CHANNEL_1
+#define HW_CAMERA_TIM_CLK_HZ      240000000
+#define HW_CAMERA_TIM_CLK_ENABLE()   __HAL_RCC_TIM1_CLK_ENABLE()
+#define HW_CAMERA_XCLK_AF_TIM     GPIO_AF1_TIM1
+
+/* The MCO1 route, kept for a sensor that is happy with it. */
+#define HW_CAMERA_MCO_SOURCE      RCC_MCO1SOURCE_HSI48
+#define HW_CAMERA_MCO_DIV         RCC_MCODIV_4
+#define HW_CAMERA_XCLK_AF         GPIO_AF0_MCO
 
 /* Data and sync, all AF13, spread over four ports. */
 #define HW_CAMERA_AF              GPIO_AF13_DCMI
