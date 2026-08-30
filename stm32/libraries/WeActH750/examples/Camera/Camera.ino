@@ -82,6 +82,18 @@ static void report(void)
   int32_t w = 0, h = 0;
   cameraGetResolution(&w, &h);
   Serial.printf("resolution  : %ld x %ld\n", (long)w, (long)h);
+  extern uint32_t dbg_frame_cnt, dbg_err_cnt, dbg_err_lisr, dbg_err_s0cr, dbg_err_ndtr, dbg_err_ris;
+  Serial.printf("frames/errs : %lu / %lu\n",
+                (unsigned long)dbg_frame_cnt, (unsigned long)dbg_err_cnt);
+  Serial.printf("at error    : LISR 0x%08lX  CR 0x%08lX  NDTR %lu  RIS 0x%02lX\n",
+                (unsigned long)dbg_err_lisr, (unsigned long)dbg_err_s0cr,
+                (unsigned long)dbg_err_ndtr, (unsigned long)dbg_err_ris);
+
+  uint32_t derr = 0, merr = 0;
+  cameraGetError(&derr, &merr);
+  // DCMI: 1 OVR, 2 SYNC, 0x40 DMA.  DMA: 1 TE, 2 FE, 4 DME, 0x20 timeout.
+  Serial.printf("err dcmi/dma: 0x%02lX 0x%02lX\n",
+                (unsigned long)derr, (unsigned long)merr);
   Serial.printf("DCMI SR/RIS : 0x%02lX 0x%02lX\n",
                 (unsigned long)DCMI->SR, (unsigned long)DCMI->RISR);
   Serial.printf("DMA NDTR    : %lu\n",

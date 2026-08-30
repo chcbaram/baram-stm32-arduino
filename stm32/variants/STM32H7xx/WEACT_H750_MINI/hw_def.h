@@ -163,6 +163,15 @@ extern "C" {
 #define HW_CAMERA_FRAMESIZE       FRAMESIZE_QVGA
 
 /*
+ * The sensor's pixel clock divider (OV2640 CLKRC, sensor bank).
+ *
+ * 0 is undivided and is what the register tables leave behind; at that rate the
+ * DCMI overruns near the end of every frame on this board. 1 halves it, which
+ * is enough here and only costs frame rate.
+ */
+#define HW_CAMERA_CLKRC           1
+
+/*
  * The sensor's master clock, out of MCO1.
  *
  * HSI48 divided by 4 is 12 MHz, which is what the manufacturer's own DCMI

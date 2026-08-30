@@ -549,6 +549,7 @@ static int ov2640_reset(camera_t *sensor)
   set_pixformat(sensor->pixformat);
   set_hmirror(0);
   set_vflip(0);
+
   return 0;
 }
 static int ov2640_read_reg(camera_t *sensor, uint16_t a)               { (void)sensor; return read_reg(a); }

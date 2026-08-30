@@ -328,6 +328,9 @@ bool cameraReset();
 // the difference only shows up as a DCMI overrun.
 bool cameraGetResolution(int32_t *p_width, int32_t *p_height);
 
+// HAL error codes from the last failure. See the note in camera.c.
+void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err);
+
 bool cameraIsAvailble(void);
 bool cameraStart(uint8_t *pBff, uint32_t Mode);
 bool cameraStop(void);

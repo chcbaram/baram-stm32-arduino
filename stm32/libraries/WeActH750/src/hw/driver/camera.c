@@ -22,6 +22,28 @@ static DCMI_HandleTypeDef  hcamera_dcmi;
 static bool is_init = false;
 static bool is_requested = false;
 
+/*
+ * State captured at the instant the DCMI reports an error.
+ *
+ * Everything interesting is scrubbed immediately afterwards - the HAL clears
+ * the DCMI flags, and its abort turns the stream's interrupts off and
+ * overwrites the DMA error code with "no transfer ongoing". Reading these
+ * registers from a sketch afterwards therefore shows a tidy, uninformative
+ * corpse. Snapshotting them here is the only way to see what the stream was
+ * actually doing when it stopped.
+ */
+uint32_t dbg_frame_cnt = 0;
+uint32_t dbg_err_cnt   = 0;
+uint32_t dbg_err_lisr  = 0;
+uint32_t dbg_err_s0cr  = 0;
+uint32_t dbg_err_ndtr  = 0;
+uint32_t dbg_err_ris   = 0;
+
+// What the last cameraStart() was given, so an error can re-arm the same
+// capture without the caller having to notice anything happened.
+static uint8_t  *p_last_buf  = NULL;
+static uint32_t  last_mode   = 0;
+
 const int resolution[][2] = {
     {0,    0   },
     // C/SIF Resolutions
@@ -432,6 +454,25 @@ static int32_t getBpp(pixformat_t pixformat)
   return bpp;
 }
 
+/*
+ * What the HAL recorded when it gave up.
+ *
+ * An overrun is usually the symptom rather than the cause: the DCMI only
+ * overruns once nobody is draining its FIFO, so if the DMA stopped first for
+ * its own reasons the overrun is what follows. These two codes separate the
+ * two - DCMI_ERROR_OVR alone means the DCMI really did outrun a healthy
+ * stream, while a DMA error alongside it says the stream died first and names
+ * how (transfer error, FIFO error, direct mode error).
+ */
+void cameraGetError(uint32_t *p_dcmi_err, uint32_t *p_dma_err)
+{
+  if (p_dcmi_err != NULL) *p_dcmi_err = hcamera_dcmi.ErrorCode;
+  if (p_dma_err  != NULL)
+  {
+    *p_dma_err = (hcamera_dcmi.DMA_Handle != NULL) ? hcamera_dcmi.DMA_Handle->ErrorCode : 0xFFFFFFFF;
+  }
+}
+
 bool cameraGetResolution(int32_t *p_width, int32_t *p_height)
 {
   if (is_init != true) return false;
@@ -459,6 +500,25 @@ bool cameraStart(uint8_t *pBff, uint32_t Mode)
 
   x_res = resolution[sensor.framesize][0];
   y_res = resolution[sensor.framesize][1];
+
+  /*
+   * Crop to exactly the frame that was asked for.
+   *
+   * Without it the DCMI takes whatever the sensor sends, and the sensor sends
+   * a little more than the output window suggests - enough that the transfer
+   * runs out near the end of a frame and the FIFO overruns, which the HAL
+   * answers by aborting the DMA and never restarting it. Cropping makes the
+   * DCMI drop the excess instead of trying to store it.
+   *
+   * The window is in bytes horizontally and lines vertically, and both limits
+   * are inclusive, hence the -1.
+   */
+  HAL_DCMI_ConfigCROP(&hcamera_dcmi, 0, 0,
+                      (x_res * getBpp(sensor.pixformat)) - 1, y_res - 1);
+  HAL_DCMI_EnableCROP(&hcamera_dcmi);
+
+  p_last_buf = pBff;
+  last_mode  = Mode;
 
   is_requested = true;
 
@@ -707,6 +767,7 @@ void HAL_DCMI_FrameEventCallback(DCMI_HandleTypeDef *hdcmi)
   logPrintf("%d ms,  %d fps\n", time, fps);
   pre_time = millis();
 
+  dbg_frame_cnt++;
   is_requested = false;
   //BSP_CAMERA_FrameEventCallback(0);
 }
@@ -729,13 +790,40 @@ void HAL_DCMI_VsyncEventCallback(DCMI_HandleTypeDef *hdcmi)
   */
 void HAL_DCMI_ErrorCallback(DCMI_HandleTypeDef *hdcmi)
 {
-  /* Prevent unused argument(s) compilation warning */
   UNUSED(hdcmi);
 
-  logPrintf("error %d\n", hdcmi->ErrorCode);
-  HAL_DCMI_DeInit(&hcamera_dcmi);
-  HAL_DCMI_Init(&hcamera_dcmi);
-  //BSP_CAMERA_ErrorCallback(0);
+  /*
+   * Snapshot first. The HAL has already cleared the DCMI flags and its abort
+   * turned the stream's interrupts off and overwrote the DMA error code with
+   * "no transfer ongoing", so reading any of this from a sketch afterwards
+   * shows a tidy and uninformative corpse.
+   */
+  dbg_err_cnt++;
+  dbg_err_lisr = DMA1->LISR;
+  dbg_err_s0cr = HW_CAMERA_DMA_STREAM->CR;
+  dbg_err_ndtr = HW_CAMERA_DMA_STREAM->NDTR;
+  dbg_err_ris  = DCMI->RISR;
+
+  /*
+   * Then re-arm.
+   *
+   * The version this was ported from called HAL_DCMI_DeInit() followed by
+   * HAL_DCMI_Init() here and stopped. That tears the peripheral down - DeInit
+   * runs MspDeInit, which releases the DMA stream and disables both interrupt
+   * lines - and never starts a capture again, so a single overrun ends video
+   * for good. It is why this looked like "one partial frame and then nothing"
+   * no matter what the DMA was configured with.
+   *
+   * An overrun is a transient: the DCMI stops itself and the DMA is aborted,
+   * and the right answer is to start the same capture over. Frames are dropped,
+   * nothing else is lost.
+   */
+  HAL_DCMI_Stop(&hcamera_dcmi);
+
+  if (p_last_buf != NULL)
+  {
+    cameraStart(p_last_buf, last_mode);
+  }
 }
 
 #endif /* _USE_HW_CAMERA */
