@@ -15,6 +15,28 @@
 
 #include <string.h>
 
+/*
+ * Which parts this back end is written for.
+ *
+ * The HAL_SD_* names are the same across every STM32 family, but two things
+ * underneath are not, and both of them are in this file:
+ *
+ *   - The DMA model. H7, H5, L4 and U5 have the DMA inside the SDMMC block, so
+ *     HAL_SD_ReadBlocks_DMA() needs nothing linked to it. F4 and F7 drive an
+ *     external stream and want __HAL_LINKDMA() in MspInit plus DMA IRQ handlers.
+ *   - Cache maintenance. SCB_*DCache_by_Addr() is Cortex-M7. Parts without a
+ *     data cache do not have it, and H5's M33 manages its caches through
+ *     separate ICACHE/DCACHE peripherals.
+ *
+ * So a new family gets its own back end beside this one rather than #ifdef
+ * blocks in here - sd.c dispatches through a table for exactly that reason, and
+ * nothing above this file has to change. Stopping here with a message beats
+ * fifty errors from code that was never meant to build.
+ */
+#if !defined(STM32H7xx)
+#error "sd_sdmmc.c is written for STM32H7. Add a back end for this family beside it and point _USE_HW_* at it."
+#endif
+
 
 #define CACHE_LINE          32
 #define IS_LINE_ALIGNED(a)  ((((uint32_t)(a)) & (CACHE_LINE - 1)) == 0)
@@ -421,14 +443,24 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
  * eight sectors, so a misaligned caller still gets multi-block transfers. One
  * sector per transaction measured ten times slower on writes.
  */
+// Guarded on the core rather than the family: a part without a data cache has
+// nothing to maintain, and the calls do not exist there to be compiled.
 static void cacheClean(const void *addr, uint32_t size)
 {
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
   SCB_CleanDCache_by_Addr((uint32_t *)addr, (int32_t)size);
+#else
+  (void)addr; (void)size;
+#endif
 }
 
 static void cacheInvalidate(const void *addr, uint32_t size)
 {
+#if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
   SCB_InvalidateDCache_by_Addr((uint32_t *)addr, (int32_t)size);
+#else
+  (void)addr; (void)size;
+#endif
 }
 
 /*

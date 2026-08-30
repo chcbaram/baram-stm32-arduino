@@ -37,6 +37,11 @@
  *
  * A board that splits D0-D3 and CK across two ports needs a small change here -
  * the bus group is configured as one HAL_GPIO_Init call.
+ *
+ * This back end is STM32H7 only. Another family shares the HAL_SD_* names but
+ * not the DMA model or the cache calls underneath, so it gets its own file
+ * beside this one; see the note at the top of sd_sdmmc.c. sd.c and everything
+ * above it stay as they are - that is what the driver table is for.
  */
 
 #ifndef SRC_COMMON_HW_INCLUDE_SD_SDMMC_H_

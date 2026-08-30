@@ -24,13 +24,25 @@ static bool is_init   = false;
 //-- Initialisation
 //
 
+// Picks the back end the board asked for. A second one - an SPI socket, say -
+// is another file under sd/ and another line here; nothing else in the library
+// changes, because nothing else in the library names a bus.
+//
+//   #ifdef _USE_HW_SD_SPI
+//     sdSpiInitDriver(&sd);
+//   #endif
+static void sdSelectDriver(void)
+{
+#ifdef _USE_HW_SDMMC
+  sdmmcInitDriver(&sd);
+#endif
+}
+
 bool sdInit(void)
 {
   is_init = false;
 
-#ifdef _USE_HW_SDMMC
-  sdmmcInitDriver(&sd);
-#endif
+  sdSelectDriver();
 
   // No back end on this board. Not an error - just nothing to talk to.
   if (sd.init == NULL) return false;
@@ -84,9 +96,7 @@ bool sdIsDetected(void)
 {
   // Asked before sdInit() by callers that want to know whether to bother, so
   // the table has to be filled in here too.
-#ifdef _USE_HW_SDMMC
-  if (sd.isDetected == NULL) sdmmcInitDriver(&sd);
-#endif
+  if (sd.isDetected == NULL) sdSelectDriver();
 
   if (sd.isDetected == NULL) return false;
   return sd.isDetected();

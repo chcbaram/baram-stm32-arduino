@@ -1,17 +1,20 @@
 #pragma once
 
 /*
- * Arduino's SD API, on this board's SDMMC socket.
+ * Arduino's SD API, on whatever this board's card socket is wired to.
  *
  * The names and behaviour match the standard SD library, so sketches and
  * libraries written against it work unchanged - File derives from Stream, which
  * is what lets anything taking a Stream& read from a card.
  *
- * It has to be a separate implementation because the standard library talks SPI
- * and this socket is wired to SDMMC1 in 4-bit mode, which is both faster and
- * the only thing the pins can do. Underneath is FatFs (ChaN's, permissively
- * licensed) over a HAL SDMMC driver, rather than STM32duino's STM32SD, which is
- * GPLv3 and would carry that licence into every sketch that opened a file.
+ * It has to be a separate implementation because the standard library only
+ * talks SPI, and this board's socket is on SDMMC in 4-bit mode - both faster
+ * and the only thing those pins can do. Underneath is FatFs (ChaN's,
+ * permissively licensed) rather than STM32duino's STM32SD, which is GPLv3 and
+ * would carry that licence into every sketch that opened a file.
+ *
+ * Nothing above hw/driver/sd.c names a bus. A board whose card hangs off SPI
+ * instead supplies its own back end and everything here is unchanged.
  *
  *   #include <SD.h>
  *
@@ -115,14 +118,14 @@ private:
 class SDClass
 {
 public:
-  // Brings up SDMMC and mounts the first FAT volume. False means no card, an
-  // unreadable card, or no filesystem on it.
+  // Brings the card up and mounts the first FAT volume. False means no card, an
+  // unreadable card, no filesystem on it, or a board with no socket at all.
   bool begin();
 
   // The standard library talks SPI and needs a chip select, and half the
-  // sketches and libraries in existence call begin(csPin). This socket is on
-  // SDMMC, which has no chip select and a clock the driver sets itself, so the
-  // arguments are accepted and ignored rather than made into a compile error.
+  // sketches and libraries in existence call begin(csPin). Which pins and which
+  // clock this board uses are settled by its back end, so the arguments are
+  // accepted and ignored rather than made into a compile error.
   bool begin(uint8_t csPin) { (void)csPin; return begin(); }
   bool begin(uint32_t clock, uint8_t csPin) { (void)clock; (void)csPin; return begin(); }
   void end();
